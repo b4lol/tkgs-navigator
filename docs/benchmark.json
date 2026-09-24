@@ -1,0 +1,14 @@
+{
+  "workload": "synthetic; not a satellite recording",
+  "python": "3.14.7",
+  "machine": "x86_64",
+  "channels": 500,
+  "sections": 10,
+  "payload_bytes": 17012,
+  "iterations": 30,
+  "parse_median_ms": 5.485,
+  "parse_p95_ms": 7.924,
+  "collector_retained_sections": 10,
+  "collector_duplicates": 190,
+  "collector_peak_traced_bytes": 952
+}

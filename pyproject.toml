@@ -1,0 +1,12 @@
+[project]
+name = "tkgs-navigator"
+version = "0.1.0"
+description = "Local TKGS discovery and recoverable bouquet updates for Enigma2"
+requires-python = ">=3.8"
+license = "GPL-2.0-or-later"
+license-files = ["LICENSE"]
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
