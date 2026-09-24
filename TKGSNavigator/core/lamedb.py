@@ -112,6 +112,20 @@ class ServiceDatabase:
                              "Run the receiver's network scan first.")
         return sorted(candidates, key=lambda s: (s.key, s.sid))[0]
 
+    def tuning_candidates(self, targets, orbital=DEFAULT_ORBITAL):
+        """Return (target, service) for each distinct target present in lamedb, keeping the given order."""
+        candidates, seen = [], set()
+        for target in targets:
+            if target in seen:
+                continue
+            seen.add(target)
+            try:
+                service = self.tuning_service(target.frequency, target.polarization, target.symbol_rate, orbital)
+            except ValueError:
+                continue
+            candidates.append((target, service))
+        return candidates
+
     def match(self, channels, orbital=DEFAULT_ORBITAL):
         matched, skipped = [], []
         for channel in channels:

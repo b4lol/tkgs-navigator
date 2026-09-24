@@ -13,7 +13,7 @@ from TKGSNavigator.core.lamedb import ServiceDatabase
 from TKGSNavigator.core.sections import TableCollector
 from TKGSNavigator.core.storage import BOUQUET
 from TKGSNavigator.core.workflow import preview, save_capture
-from tests.helpers import LAMEDB4, sample_sections
+from tests.helpers import LAMEDB4, LAMEDB_TWO_TRANSPONDERS, sample_sections
 
 SCREEN_MODULE = "TKGSNavigator.ui.screen"
 
@@ -58,6 +58,27 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(flags, [5, 4])
             self.assertFalse(events[-1]["crc"])
 
+    def test_idle_transponder_stops_early_without_crc_fallback(self):
+        clock = [0.0]
+
+        def idle_select(readers, writers, errors, interval):
+            clock[0] += interval
+            return ([], [], [])
+
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
+             patch("TKGSNavigator.core.dvb.os.close") as closed, \
+             patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, \
+             patch("TKGSNavigator.core.dvb.select.select", side_effect=idle_select), \
+             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: clock[0]):
+            events = []
+            result = capture("/fake/demux", progress=events.append, idle_timeout=20)
+            self.assertEqual(result.parts, {})
+            self.assertTrue(result.check_crc)
+            self.assertLess(clock[0], 21)
+            self.assertEqual(events[-1]["sections"], 0)
+            self.assertEqual([filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2], [5])
+            closed.assert_called_once_with(42)
+
     def test_table_completed_after_fallback_deadline_keeps_crc(self):
         clock = iter([0.0, 0.0, 30.0])
         with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
@@ -69,6 +90,10 @@ class CaptureTests(unittest.TestCase):
             result = capture("/fake/demux")
             self.assertTrue(result.complete)
             self.assertTrue(result.check_crc)
+
+    def test_invalid_idle_timeout_rejected(self):
+        with self.assertRaises(ValueError):
+            capture("/fake/demux", timeout=10, idle_timeout=20)
 
     def test_cancellation_closes_fd(self):
         with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
@@ -337,6 +362,46 @@ class ScreenTests(unittest.TestCase):
         self.screen.check_lock()
         self.assertEqual(self.screen.state, "idle")
         self.assertEqual(self.nav.current.toString(), "original-service")
+
+    def use_two_transponders(self):
+        (Path(self.temp.name) / "lamedb").write_text(LAMEDB_TWO_TRANSPONDERS, encoding="utf-8")
+
+    def test_lock_timeout_tries_next_transponder(self):
+        self.use_two_transponders()
+        self.start()
+        first = self.screen.target_reference
+        self.nav.locked = False
+        self.screen.deadline = 0
+        self.screen.check_lock()
+        self.assertEqual(self.screen.state, "tuning")
+        self.assertNotEqual(self.screen.target_reference, first)
+        self.assertIn("12423 H 30000", self.screen["status"].text)
+        self.screen.deadline = 0
+        self.screen.check_lock()
+        self.assertEqual(self.screen.state, "idle")
+        self.assertEqual(self.nav.current.toString(), "original-service")
+
+    def test_empty_transponder_retunes_then_reports(self):
+        self.use_two_transponders()
+        self.start()
+        self.screen.check_lock()
+        self.assertIn("--idle-timeout", self.screen.container.command)
+        empty = dict(event="result", **preview(TableCollector(), ServiceDatabase.parse(LAMEDB4)))
+        self.screen.receive((json.dumps(empty) + "\n").encode("ascii"))
+        self.screen.finished(2)
+        self.assertEqual(self.screen.state, "tuning")
+        self.assertIn("No TKGS data", self.screen["status"].text)
+        self.screen.check_lock()
+        self.screen.receive((json.dumps(empty) + "\n").encode("ascii"))
+        self.screen.finished(2)
+        self.assertEqual(self.screen.state, "idle")
+        self.assertEqual(self.nav.current.toString(), "original-service")
+
+    def test_configured_transponder_missing_falls_back_to_known_one(self):
+        self.screen.cfg.frequency.value = 11000
+        self.start()
+        self.assertEqual(self.screen.state, "tuning")
+        self.assertIn("12380 V 27500", self.screen["status"].text)
 
     def test_skin_is_valid_xml(self):
         from xml.etree.ElementTree import fromstring

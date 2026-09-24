@@ -52,9 +52,12 @@ def _snapshot(collector, elapsed, timeout):
             "crc": collector.check_crc}
 
 
-def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: None):
+def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: None, idle_timeout=None):
+    """Collect one TKGS table; stop early when it is complete or when nothing arrives within idle_timeout."""
     if not 1 <= timeout <= 180:
         raise ValueError("Scan timeout must be between 1 and 180 seconds")
+    if idle_timeout is not None and not 1 <= idle_timeout <= timeout:
+        raise ValueError("Idle timeout must be between 1 second and the scan timeout")
     collector, framer = TableCollector(), SectionFramer()
     fd = os.open(device, os.O_RDWR | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
     stop = ioctl_request(42)
@@ -62,6 +65,7 @@ def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: N
         _start_filter(fd)
         started = time.monotonic()
         next_update = started
+        received = False
         while not collector.complete:
             if cancelled():
                 raise Cancelled("Scan cancelled")
@@ -86,11 +90,15 @@ def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: N
                         raise
                     if not chunk:
                         raise OSError("DVB device closed the data stream")
+                    received = True
                     for raw in framer.feed(chunk):
                         collector.add(raw)
                     if collector.complete:
                         break
             now = time.monotonic()
+            if idle_timeout is not None and not received and now - started >= idle_timeout:
+                progress(_snapshot(collector, now - started, timeout))
+                break
             if not collector.complete and collector.check_crc and now - started >= CRC_FALLBACK_AFTER:
                 try:
                     fcntl.ioctl(fd, stop)

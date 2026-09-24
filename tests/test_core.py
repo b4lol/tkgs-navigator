@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from TKGSNavigator.core.constants import TKGS_TRANSPONDERS, TuningTarget
 from TKGSNavigator.core.crc import crc32_mpeg
 from TKGSNavigator.core.dvb import FILTER_PARAMETERS, filter_parameters, ioctl_request
 from TKGSNavigator.core.lamedb import ServiceDatabase, Service, Transponder
@@ -15,7 +16,8 @@ from TKGSNavigator.core.sections import Section, SectionFramer, TableCollector
 from TKGSNavigator.core.storage import BACKUP_DIR, BOUQUET, INDEX, BouquetStore, render_bouquet
 from TKGSNavigator.core.text import decode_name
 from TKGSNavigator.core.workflow import apply_capture, load_capture, preview, save_capture
-from tests.helpers import LAMEDB4, LAMEDB5, lcn_record, sample_sections, section, service_record
+from tests.helpers import (LAMEDB4, LAMEDB5, LAMEDB_TWO_TRANSPONDERS, lcn_record, sample_sections, section,
+                           service_record)
 
 
 class SectionTests(unittest.TestCase):
@@ -158,6 +160,14 @@ class DatabaseTests(unittest.TestCase):
         matched, skipped = database.match(channels)
         self.assertEqual(matched, [])
         self.assertEqual(skipped[0]["reason"], "ambiguous")
+
+    def test_tuning_candidates_keep_order_skip_missing_and_duplicates(self):
+        database = ServiceDatabase.parse(LAMEDB_TWO_TRANSPONDERS)
+        targets = (TuningTarget(11000, "V", 27500), TKGS_TRANSPONDERS[1]) + TKGS_TRANSPONDERS
+        found = database.tuning_candidates(targets)
+        self.assertEqual([(target.frequency, service.sid) for target, service in found],
+                         [(12423, 0x67), (12380, 0x65)])
+        self.assertEqual(ServiceDatabase.parse(LAMEDB4).tuning_candidates([TuningTarget(11000, "V", 27500)]), [])
 
     def test_v5_quoted_name(self):
         db = ServiceDatabase.parse(LAMEDB5.replace('"Sample Culture"', '"Culture, Arts"'))

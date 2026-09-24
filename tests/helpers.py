@@ -45,3 +45,18 @@ t:01a40000:0001:0001,s:12380000:27500000:1:3:420:2:0
 s:0065:01a40000:0001:0001:25:0,"Sample News HD",p:Demo
 s:0066:01a40000:0001:0001:1:0,"Sample Culture",p:Demo
 '''
+
+# Both TKGS transponders: 12380 V 27500 carries SID 0x65/0x66, 12423 H 30000 carries SID 0x67.
+LAMEDB_TWO_TRANSPONDERS = LAMEDB4.replace('''/
+end
+services''', '''/
+01a40000:0002:0001
+\ts 12423000:30000000:0:3:420:2:0
+/
+end
+services''').replace('''p:Demo
+end''', '''p:Demo
+0067:01a40000:0002:0001:1:0
+Sample Data H
+p:Demo
+end''')

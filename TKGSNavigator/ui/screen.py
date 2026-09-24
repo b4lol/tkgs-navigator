@@ -15,6 +15,7 @@ from Components.config import configfile, getConfigListEntry, KEY_LEFT, KEY_RIGH
 from Screens.Screen import Screen
 from enigma import eConsoleAppContainer, eDVBDB, eServiceReference, eTimer
 
+from ..core.constants import TKGS_TRANSPONDERS, TuningTarget
 from ..core.lamedb import ServiceDatabase
 from ..core.storage import BACKUP_DIR
 from .config import settings
@@ -25,6 +26,7 @@ CONFIG_DIR = Path("/etc/enigma2")
 LAMEDB = CONFIG_DIR / "lamedb"
 OUTPUT_LIMIT = 2 * 1024 * 1024
 LOCK_DEADLINE = 12
+IDLE_TIMEOUT = 20
 LAUNCH_STATUS = {"scan": "Fetching the TKGS table…",
                  "apply": "Backing up and writing the list…",
                  "restore": "Restoring the previous list…"}
@@ -110,8 +112,10 @@ class NavigatorScreen(Screen):
             if self.session.nav.getRecordings():
                 raise ValueError("Cannot scan while a recording is in progress.")
             database = ServiceDatabase.load(LAMEDB)
-            target = database.tuning_service(self.cfg.frequency.value, self.cfg.polarization.value,
-                                             self.cfg.symbol_rate.value)
+            self.candidates = database.tuning_candidates(self._targets())
+            if not self.candidates:
+                raise ValueError("No TKGS transponder is in the service database. "
+                                 "Run the receiver's network scan first.")
             self.device = "/dev/dvb/adapter%d/demux%d" % (self.cfg.adapter.value, self.cfg.demux.value)
             if not Path(self.device).exists():
                 raise ValueError("Selected DVB device not found: " + self.device)
@@ -122,20 +126,45 @@ class NavigatorScreen(Screen):
             self["channels"].setList([])
             self["progress"].setValue(0)
             self.original = self.session.nav.getCurrentlyPlayingServiceReference()
-            self.target_reference = target.reference
             self.playback_changed = True
-            self.state = "tuning"
             self.cancel_requested = False
-            self.deadline = time.monotonic() + LOCK_DEADLINE
-            self.status("Tuning to the TKGS frequency; waiting for tuner lock…")
-            if self.session.nav.playService(eServiceReference(target.reference)):
-                raise ValueError("Could not play the TKGS service")
-            self.timer.start(200, False)
-            self["red"].setText("Cancel")
+            self._tune(0)
         except Exception as error:
-            self.state = "idle"
-            self.restore_playback()
-            self.status(str(error))
+            self._fail(str(error))
+
+    def _targets(self):
+        configured = TuningTarget(self.cfg.frequency.value, self.cfg.polarization.value, self.cfg.symbol_rate.value)
+        return (configured,) + TKGS_TRANSPONDERS
+
+    def _tune(self, index, reason=""):
+        target, service = self.candidates[index]
+        self.candidate = index
+        self.target_reference = service.reference
+        self.state = "tuning"
+        self.deadline = time.monotonic() + LOCK_DEADLINE
+        self.status((reason + " " if reason else "") +
+                    "Tuning to %d %s %d; waiting for tuner lock…" % target)
+        if self.session.nav.playService(eServiceReference(service.reference)):
+            raise ValueError("Could not play the TKGS service")
+        self.timer.start(200, False)
+        self["red"].setText("Cancel")
+
+    def _try_next(self, reason):
+        """Tune the next candidate transponder; return False when none is left."""
+        if self.candidate + 1 >= len(self.candidates):
+            return False
+        try:
+            self._tune(self.candidate + 1, reason)
+        except Exception as error:
+            self._fail(str(error))
+        return True
+
+    def _fail(self, message):
+        self.timer.stop()
+        self.state = "idle"
+        self.restore_playback()
+        self["red"].setText("Close")
+        self.status(message)
 
     def check_lock(self):
         if self.state != "tuning":
@@ -151,14 +180,14 @@ class NavigatorScreen(Screen):
             locked = False
         if locked:
             self.timer.stop()
-            self.launch("scan", ["scan", "--device", self.device, "--timeout", str(self.cfg.timeout.value),
+            timeout = self.cfg.timeout.value
+            self.launch("scan", ["scan", "--device", self.device, "--timeout", str(timeout),
+                                 "--idle-timeout", str(min(IDLE_TIMEOUT, timeout)),
                                  "--lamedb", str(LAMEDB), "--save-capture", str(self.capture_path)])
         elif time.monotonic() >= self.deadline:
             self.timer.stop()
-            self.state = "idle"
-            self.restore_playback()
-            self["red"].setText("Close")
-            self.status("Tuner did not lock. Check the frequency and satellite settings.")
+            if not self._try_next("Tuner did not lock."):
+                self._fail("Tuner did not lock. Check the frequency and satellite settings.")
 
     def launch(self, state, arguments):
         self.state, self.buffer, self.pending = state, "", None
@@ -203,11 +232,14 @@ class NavigatorScreen(Screen):
         if self.closed:
             return
         operation = self.state
+        event = self.pending or {}
+        if (operation == "scan" and not self.cancel_requested and event.get("event") == "result"
+                and event.get("sections") == 0 and self._try_next("No TKGS data on this transponder.")):
+            return
         self.state = "idle"
         self["red"].setText("Close")
         if operation == "scan":
             self.restore_playback()
-        event = self.pending or {}
         if self.cancel_requested:
             self.cancel_requested = False
             self.report = None
@@ -257,11 +289,7 @@ class NavigatorScreen(Screen):
         if self.state in ("apply", "restore"):
             self.status("Waiting for the file operation to finish…")
         elif self.state == "tuning":
-            self.timer.stop()
-            self.state = "idle"
-            self.restore_playback()
-            self["red"].setText("Close")
-            self.status("Scan cancelled.")
+            self._fail("Scan cancelled.")
         elif self.state == "scan":
             self.cancel_requested = True
             self.status("Stopping the scan…")
