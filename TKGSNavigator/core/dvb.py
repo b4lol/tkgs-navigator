@@ -91,7 +91,7 @@ def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: N
                     if collector.complete:
                         break
             now = time.monotonic()
-            if collector.check_crc and now - started >= CRC_FALLBACK_AFTER:
+            if not collector.complete and collector.check_crc and now - started >= CRC_FALLBACK_AFTER:
                 try:
                     fcntl.ioctl(fd, stop)
                 except OSError:

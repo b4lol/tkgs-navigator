@@ -58,6 +58,18 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(flags, [5, 4])
             self.assertFalse(events[-1]["crc"])
 
+    def test_table_completed_after_fallback_deadline_keeps_crc(self):
+        clock = iter([0.0, 0.0, 30.0])
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
+             patch("TKGSNavigator.core.dvb.os.close"), \
+             patch("TKGSNavigator.core.dvb.fcntl.ioctl"), \
+             patch("TKGSNavigator.core.dvb.select.select", return_value=([42], [], [])), \
+             patch("TKGSNavigator.core.dvb.os.read", return_value=b"".join(sample_sections())), \
+             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: next(clock, 30.0)):
+            result = capture("/fake/demux")
+            self.assertTrue(result.complete)
+            self.assertTrue(result.check_crc)
+
     def test_cancellation_closes_fd(self):
         with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
              patch("TKGSNavigator.core.dvb.os.close") as closed, \
