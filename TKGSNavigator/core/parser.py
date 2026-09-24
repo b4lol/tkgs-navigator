@@ -18,6 +18,13 @@ class Channel:
     lcn: int
     sid: int
     name: str
+    # Only a table layout that carries these fields fills them; None means "not provided".
+    tsid: int | None = None
+    onid: int | None = None
+    hd: bool | None = None
+    fta: bool | None = None
+    radio: bool | None = None
+    package: int | None = None
 
 
 @dataclass

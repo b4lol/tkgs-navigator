@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Tuple, Union
 
-from .constants import DEFAULT_ORBITAL, POLARIZATIONS, TV_SERVICE_TYPES, TuningTarget
+from .constants import (
+    DEFAULT_ORBITAL,
+    POLARIZATIONS,
+    RADIO_SERVICE_TYPES,
+    TV_SERVICE_TYPES,
+    TuningTarget,
+)
 from .parser import Channel
 
 # (dvb_namespace, transport_stream_id, original_network_id)
@@ -168,28 +174,54 @@ class ServiceDatabase:
             candidates.append((target, service))
         return candidates
 
+    def _on_orbital(self, service: Service, orbital: int) -> bool:
+        transponder = self.transponders.get(service.key)
+        return transponder is not None and transponder.orbital == orbital
+
+    def candidates(self, channel: Channel, orbital: int = DEFAULT_ORBITAL) -> list[Service]:
+        """Services on the orbital that may carry the channel.
+
+        When the table supplies TSID and ONID the full key must match; otherwise the SID
+        alone is used. Radio channels match radio service types, all others TV types.
+        """
+        kinds = RADIO_SERVICE_TYPES if channel.radio else TV_SERVICE_TYPES
+        found = {}
+        for service in self.by_sid.get(channel.sid, []):
+            if service.kind not in kinds or not self._on_orbital(service, orbital):
+                continue
+            if channel.tsid is not None and service.key[1] != channel.tsid:
+                continue
+            if channel.onid is not None and service.key[2] != channel.onid:
+                continue
+            found[service.reference] = service
+        return list(found.values())
+
+    def key_hit_rate(self, channels: Iterable[Channel], orbital: int = DEFAULT_ORBITAL) -> float:
+        """Share of channels whose (ONID, TSID, SID) exists on the orbital, ignoring type."""
+        keys = {
+            (service.key[2], service.key[1], service.sid)
+            for service in self.services
+            if self._on_orbital(service, orbital)
+        }
+        listed = [(c.onid, c.tsid, c.sid) for c in channels]
+        return sum(key in keys for key in listed) / len(listed) if listed else 0.0
+
     def match(
         self, channels: Iterable[Channel], orbital: int = DEFAULT_ORBITAL
     ) -> tuple[list[tuple[Channel, Service]], list[Skipped]]:
-        """Pair each channel with its single TV service on the orbital; others are skipped."""
+        """Pair each channel with its single service on the orbital; others are skipped."""
         matched: list[tuple[Channel, Service]] = []
         skipped: list[Skipped] = []
         for channel in channels:
-            candidates = {
-                s.reference: s
-                for s in self.by_sid.get(channel.sid, [])
-                if s.key in self.transponders
-                and self.transponders[s.key].orbital == orbital
-                and s.kind in TV_SERVICE_TYPES
-            }
-            if len(candidates) != 1:
+            found = self.candidates(channel, orbital)
+            if len(found) != 1:
                 skipped.append(
                     {
                         "lcn": channel.lcn,
                         "name": channel.name,
-                        "reason": "ambiguous" if candidates else "missing",
+                        "reason": "ambiguous" if found else "missing",
                     }
                 )
                 continue
-            matched.append((channel, next(iter(candidates.values()))))
+            matched.append((channel, found[0]))
         return matched, skipped

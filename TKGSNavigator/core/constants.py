@@ -21,3 +21,4 @@ TKGS_TRANSPONDERS = (TuningTarget(12380, "V", 27500), TuningTarget(12423, "H", 3
 
 POLARIZATIONS = {"H": 0, "V": 1, "L": 2, "R": 3}
 TV_SERVICE_TYPES = (1, 4, 17, 22, 25, 31, 32)
+RADIO_SERVICE_TYPES = (2, 10)

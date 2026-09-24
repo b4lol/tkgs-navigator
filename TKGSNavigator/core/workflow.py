@@ -10,13 +10,17 @@ from typing import Any, Dict, List, Tuple
 
 from .constants import DEFAULT_ORBITAL
 from .lamedb import Service, ServiceDatabase
-from .parser import Channel, parse_channels
+from .parser import Channel, ParseResult, parse_channels
+from .records import LayoutMismatch, parse_record_sections
 from .sections import TableCollector
 from .storage import BouquetStore, atomic_write
 
 MAX_CAPTURE_BYTES = 2 * 1024 * 1024
 MAX_CAPTURE_SECTIONS = 512
 MAX_SECTION_BASE64 = 5464
+
+# The fixed-record layout is trusted only when this share of its keys exists in lamedb.
+RECORD_LAYOUT_MIN_HIT_RATE = 0.5
 
 # JSON-serialisable preview report, emitted by the worker and read by the UI.
 Report = Dict[str, Any]
@@ -62,11 +66,34 @@ def save_capture(path: str | Path, collector: TableCollector) -> None:
     atomic_write(Path(path), json.dumps(document, indent=2).encode("utf-8"))
 
 
+def parse_table(
+    collector: TableCollector, database: ServiceDatabase, orbital: int = DEFAULT_ORBITAL
+) -> tuple[ParseResult, dict[str, Any]]:
+    """Parse with the fixed-record layout when it proves itself, else the observed layout."""
+    sections = collector.ordered()
+    evidence: dict[str, Any] = {
+        "layout": "observed",
+        "records_parsed": False,
+        "lamedb_hit_rate": None,
+    }
+    try:
+        records = parse_record_sections(sections, collector.check_crc)
+    except LayoutMismatch as error:
+        evidence["records_rejected"] = str(error)
+    else:
+        rate = database.key_hit_rate(records.channels, orbital)
+        evidence.update(records_parsed=True, lamedb_hit_rate=round(rate, 3))
+        if rate >= RECORD_LAYOUT_MIN_HIT_RATE:
+            evidence["layout"] = "records"
+            return records, evidence
+    return parse_channels(sections, collector.check_crc), evidence
+
+
 def analyze(
     collector: TableCollector, database: ServiceDatabase, orbital: int = DEFAULT_ORBITAL
 ) -> tuple[Report, Matched]:
     """Parse and match once, returning both the JSON report and the matched pairs."""
-    result = parse_channels(collector.ordered(), collector.check_crc)
+    result, evidence = parse_table(collector, database, orbital)
     matched, skipped = database.match(result.channels, orbital)
     warnings = list(result.warnings)
     if not collector.complete:
@@ -80,6 +107,7 @@ def analyze(
         "complete": collector.complete,
         "version": collector.version,
         "crc_checked": collector.check_crc,
+        "layout": evidence,
         "sections": len(collector.parts),
         "missing_sections": collector.missing,
         "rejected_sections": collector.rejected,

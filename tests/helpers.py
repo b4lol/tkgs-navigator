@@ -80,3 +80,10 @@ Sample Data H
 p:Demo
 end""",
 )
+
+
+def record(sid, lcn, name, tsid=1, onid=1, flags=0x02, package=0):
+    """One record of the fixed-record layout (research report section 7.1)."""
+    raw = name.encode("utf-8")
+    header = b"".join(value.to_bytes(2, "big") for value in (sid, tsid, onid, lcn))
+    return header + bytes([flags, len(raw)]) + raw + bytes([package])
