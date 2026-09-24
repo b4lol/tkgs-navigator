@@ -3,13 +3,15 @@
 A local TKGS scanning and channel-ordering plugin for Enigma2 images running
 **Python 3.8 or newer**. It follows a scan → preview → apply flow. No server,
 WebIf, API key or third-party Python package is required. Version:
-**0.1.0 — first release, pending hardware validation**.
+**0.2.0 — pending hardware validation**.
 
 ## What it does
 
 - Tunes to the TKGS frequency on Türksat 42°E and waits for tuner lock.
 - Reads PID 8181 / table 0xA7 sections in a separate process without blocking the UI.
 - Checks CRC, table version and section completeness; duplicates are not stored.
+  If the table is still incomplete after 25 seconds, the hardware CRC check is
+  switched off and capturing continues; structural and version checks still apply.
 - Stops as soon as the table is complete instead of waiting out the timeout.
   On error or cancellation it returns to the previous channel.
 - Resolves channel names and LCN order locally, matching against lamedb 4/5.
@@ -27,10 +29,10 @@ Prebuilt packages are in `dist/`. Copy the one that fits your device:
 
 ```sh
 # opkg images such as OpenATV / OpenPLi
-opkg install /tmp/enigma2-plugin-extensions-tkgs-navigator_0.1.0_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-tkgs-navigator_0.2.0_all.ipk
 
 # Python 3 images using dpkg
-dpkg -i /tmp/enigma2-plugin-extensions-tkgs-navigator_0.1.0_all.deb
+dpkg -i /tmp/enigma2-plugin-extensions-tkgs-navigator_0.2.0_all.deb
 ```
 
 Then restart the Enigma2 GUI and open **Plugins → TKGS Navigator**. No install script

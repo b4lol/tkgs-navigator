@@ -34,6 +34,26 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(events[0]["sections"], 2)
             closed.assert_called_once_with(42)
 
+    def test_incomplete_capture_retries_without_crc(self):
+        clock = [0.0]
+
+        def idle_select(readers, writers, errors, interval):
+            clock[0] += interval
+            return ([], [], [])
+
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
+             patch("TKGSNavigator.core.dvb.os.close"), \
+             patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, \
+             patch("TKGSNavigator.core.dvb.select.select", side_effect=idle_select), \
+             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: clock[0]):
+            events = []
+            result = capture("/fake/demux", progress=events.append)
+            self.assertFalse(result.complete)
+            self.assertFalse(result.check_crc)
+            flags = [call.args[2].flags for call in ioctl.call_args_list if len(call.args) > 2]
+            self.assertEqual(flags, [5, 4])
+            self.assertFalse(events[-1]["crc"])
+
     def test_cancellation_closes_fd(self):
         with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
              patch("TKGSNavigator.core.dvb.os.close") as closed, \

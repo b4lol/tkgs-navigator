@@ -28,6 +28,12 @@ class SectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Section.parse(raw)
 
+    def test_crc_check_can_be_disabled(self):
+        raw = bytearray(section(b"example"))
+        raw[9] ^= 1
+        collector = TableCollector(check_crc=False)
+        self.assertTrue(collector.add(bytes(raw)))
+
     def test_split_and_coalesced_reads(self):
         samples = sample_sections()
         wire = b"\xff\xff" + b"".join(samples)

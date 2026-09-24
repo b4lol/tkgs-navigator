@@ -1,7 +1,8 @@
 # Validation
 
-**47 tests pass** in the development environment. Coverage: the CRC known vector,
-corrupt and partial sections, version transitions, a 512-entry deterministic
+**49 tests pass** in the development environment. Coverage: the CRC known vector,
+corrupt and partial sections, the CRC fallback retry, version transitions, a
+512-entry deterministic
 malformed-data corpus, lamedb 4/5, SID ambiguities, rollback on a write failure,
 backup integrity, CLI preview/apply/restore, the mock Enigma2 playback and cancel
 lifecycle, DEB/IPK reproducibility and preservation of source files in the package.

@@ -15,6 +15,7 @@ READS_PER_WAKE = 32
 READ_SIZE = 8192
 SELECT_INTERVAL = 0.2
 PROGRESS_INTERVAL = 0.5
+CRC_FALLBACK_AFTER = 25.0
 
 
 class Filter(ctypes.Structure):
@@ -29,7 +30,7 @@ class FilterParameters(ctypes.Structure):
 
 def ioctl_request(number, size=0, write=False, machine=None):
     machine = (machine or platform.machine()).lower()
-    special = machine.startswith(("mips", "ppc", "powerpc", "sparc", "alpha"))
+    special = machine.startswith(("mips", "ppc", "powerpc", "sparc", "parisc", "alpha"))
     bits = 13 if special else 14
     direction = (4 if special else 1) if write else (1 if special else 0)
     return direction << (16 + bits) | size << 16 | ord("o") << 8 | number
@@ -39,11 +40,11 @@ class Cancelled(Exception):
     pass
 
 
-def _start_filter(fd):
+def _start_filter(fd, check_crc=True):
     params = FilterParameters()
     params.pid = TKGS_PID
     params.filter.value[0], params.filter.mask[0] = TKGS_TABLE_ID, 0xFF
-    params.flags = 1 | 4  # DMX_CHECK_CRC | DMX_IMMEDIATE_START.
+    params.flags = (1 if check_crc else 0) | 4  # DMX_CHECK_CRC | DMX_IMMEDIATE_START.
     fcntl.ioctl(fd, ioctl_request(43, ctypes.sizeof(params), True), params)
 
 
@@ -51,7 +52,8 @@ def _snapshot(collector, elapsed, timeout):
     return {"elapsed": round(elapsed, 1), "timeout": timeout,
             "sections": len(collector.parts),
             "expected": None if collector.last is None else collector.last + 1,
-            "rejected": collector.rejected, "duplicates": collector.duplicates}
+            "rejected": collector.rejected, "duplicates": collector.duplicates,
+            "crc": collector.check_crc}
 
 
 def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: None):
@@ -93,6 +95,13 @@ def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: N
                     if collector.complete:
                         break
             now = time.monotonic()
+            if collector.check_crc and now - started >= CRC_FALLBACK_AFTER:
+                try:
+                    fcntl.ioctl(fd, stop)
+                except OSError:
+                    pass
+                _start_filter(fd, check_crc=False)
+                collector.check_crc = False
             if now >= next_update or collector.complete:
                 progress(_snapshot(collector, now - started, timeout))
                 next_update = now + PROGRESS_INTERVAL

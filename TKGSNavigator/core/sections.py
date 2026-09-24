@@ -36,13 +36,13 @@ class Section:
     raw: bytes
 
     @classmethod
-    def parse(cls, raw):
+    def parse(cls, raw, check_crc=True):
         if len(raw) < 12 or raw[0] != 0xA7 or not raw[1] & 0x80:
             raise ValueError("Invalid TKGS section header")
         length = 3 + ((raw[1] & 15) << 8 | raw[2])
         if length != len(raw) or not raw[5] & 1 or raw[6] > raw[7]:
             raise ValueError("Invalid section length, ordering, or current_next flag")
-        if crc32_mpeg(raw):
+        if check_crc and crc32_mpeg(raw):
             raise ValueError("Section CRC check failed")
         return cls(int.from_bytes(raw[3:5], "big"), (raw[5] >> 1) & 31, raw[6], raw[7], raw)
 
@@ -54,17 +54,18 @@ class Section:
 class TableCollector:
     """Keep one subtable, reject duplicates and stale version interleaving."""
 
-    def __init__(self):
+    def __init__(self, check_crc=True):
         self.extension = None
         self.version = None
         self.last = None
         self.parts = {}
         self.rejected = 0
         self.duplicates = 0
+        self.check_crc = check_crc
 
     def add(self, raw):
         try:
-            section = Section.parse(raw)
+            section = Section.parse(raw, self.check_crc)
         except ValueError:
             self.rejected += 1
             return False

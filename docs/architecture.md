@@ -19,7 +19,7 @@ captured raw record → re-validation → backup → bouquet + index
 | `core/text.py` | Channel-name codec detection and control-character cleaning |
 | `core/parser.py` | Observed TKGS service-name / LCN relationships |
 | `core/lamedb.py` | Read-only lamedb, numeric frequency and satellite checks |
-| `core/dvb.py` | ARM/x86 and MIPS ioctl codes, nonblocking demux, timeout/cancel |
+| `core/dvb.py` | Architecture-aware ioctl codes (incl. MIPS/PPC/SPARC/PA-RISC/Alpha), nonblocking demux, timeout/cancel |
 | `core/workflow.py` | Shared live/offline flow, bounded capture file, single-pass analysis |
 | `core/storage.py` | Lock, backup, atomic file write, rollback |
 | `worker.py` | JSON-lines CLI, error and cancel exit codes |
@@ -50,7 +50,9 @@ so parsing never blocks the GUI event loop.
 
 The first valid `table_id_extension` is followed; there is no merging of multiple
 subtables. When the version changes, earlier sections are dropped and stale-version
-interleaving is rejected. CRC checking is never disabled. Service/LCN patterns are
+interleaving is rejected. If the table is still incomplete after 25 seconds, the
+demux CRC check is switched off and capturing continues with the structural and
+version checks still in place. Service/LCN patterns are
 searched with bounds and conflict checks; the meaning of all proprietary TKGS
 container fields is not known. For that reason, regression tests against a real
 broadcast recording are the next validation step.
