@@ -69,7 +69,7 @@ class ServiceDatabase:
         """Parse lamedb 4 or 5 text.
 
         Raises:
-            ValueError: on an unsupported version or a malformed record.
+            ValueError: on an unsupported version or a truncated record.
         """
         lines = text.splitlines()
         if not lines or lines[0].strip() not in ("eDVB services /4/", "eDVB services /5/"):
@@ -77,26 +77,41 @@ class ServiceDatabase:
         transponders: dict[TransponderKey, Transponder] = {}
         services: list[Service] = []
 
-        def add_tp(identity: str, params: str) -> None:
+        def add_tp(identity: str, params: str) -> bool:
+            try:
+                fields = [int(v, 16) for v in identity.split(":")[:3]]
+                if len(fields) != 3:
+                    return False
+            except ValueError:
+                return False
             if not params.startswith(("s ", "s:")):
-                return
-            fields = [int(v, 16) for v in identity.split(":")[:3]]
-            values = params[2:].split(",", 1)[0].split(":")
-            if len(fields) != 3 or len(values) < 5:
-                raise ValueError("Incomplete transponder fields")
-            key = (fields[0], fields[1], fields[2])
-            freq, sr, pol, _, orbital = map(int, values[:5])
+                return True  # terrestrial/cable record: consumed, not stored
+            try:
+                values = params[2:].split(",", 1)[0].split(":")
+                if len(values) < 5:
+                    return True
+                key = (fields[0], fields[1], fields[2])
+                freq, sr, pol, _, orbital = map(int, values[:5])
+            except ValueError:
+                return True
             transponders[key] = Transponder(key, freq, sr, pol, orbital % 3600)
+            return True
 
-        def add_service(identity: str, name: str) -> None:
-            values = identity.split(":")
-            if len(values) < 6:
-                raise ValueError("Incomplete service fields")
-            sid, ns, tsid, onid = (int(v, 16) for v in values[:4])
-            kind = int(values[4], 10)  # lamedb writes service_type in decimal.
+        def add_service(identity: str, name: str) -> bool:
+            try:
+                values = identity.split(":")
+                if len(values) < 6:
+                    return False
+                sid, ns, tsid, onid = (int(v, 16) for v in values[:4])
+                kind = int(values[4], 10)  # lamedb writes service_type in decimal.
+            except ValueError:
+                return False
+            # Stray records (e.g. the all-zero placeholder some editors leave
+            # behind) are skipped without consuming the following name line.
             if not 0 < sid <= 65535 or not 0 <= kind <= 255:
-                raise ValueError("Invalid service identifier")
+                return False
             services.append(Service(sid, (ns, tsid, onid), kind, name))
+            return True
 
         if "/5/" in lines[0]:
             for line in lines[1:]:
@@ -119,13 +134,13 @@ class ServiceDatabase:
                 if mode == "transponders":
                     if index >= len(lines):
                         raise ValueError("Truncated transponder record")
-                    add_tp(line, lines[index].strip())
-                    index += 1
+                    if add_tp(line, lines[index].strip()):
+                        index += 1
                 elif mode == "services":
                     if index + 1 >= len(lines):
                         raise ValueError("Truncated service record")
-                    add_service(line, lines[index])
-                    index += 2
+                    if add_service(line, lines[index]):
+                        index += 2
         return cls(transponders, services)
 
     def tuning_service(

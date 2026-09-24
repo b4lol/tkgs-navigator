@@ -150,6 +150,17 @@ class ParserTests(unittest.TestCase):
 
 
 class DatabaseTests(unittest.TestCase):
+    def test_all_zero_placeholder_service_is_skipped(self):
+        # Stock images can leave a stray all-zero record in the services section;
+        # enigma2 skips such lines without consuming the following name line.
+        text = LAMEDB4.replace("services\n", "services\n0000:00000000:0000:0000:0:0:0\n", 1)
+        database = ServiceDatabase.parse(text)
+        self.assertEqual(database.services, ServiceDatabase.parse(LAMEDB4).services)
+        text5 = LAMEDB5.replace("s:0065", 's:0000:00000000:0000:0000:0:0,""\ns:0065', 1)
+        self.assertEqual(
+            ServiceDatabase.parse(text5).services, ServiceDatabase.parse(LAMEDB5).services
+        )
+
     def test_v4_v5_equivalence_and_decimal_service_type(self):
         four, five = ServiceDatabase.parse(LAMEDB4), ServiceDatabase.parse(LAMEDB5)
         self.assertEqual(four.services, five.services)
