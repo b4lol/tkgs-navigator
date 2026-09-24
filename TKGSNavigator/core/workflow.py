@@ -183,7 +183,10 @@ def analyze(
             for file in (plan.files if plan else ())
         ],
         "warnings": warnings,
-        "can_apply": collector.complete and plan is not None and not result.warnings,
+        # Per-channel skips (conflicting SID/LCN) stay warnings only; the table
+        # is applicable by hand. Automatic application additionally requires
+        # that warnings is empty (see ui/auto.py and the screen's auto-apply).
+        "can_apply": collector.complete and plan is not None,
     }
     return report, plan
 

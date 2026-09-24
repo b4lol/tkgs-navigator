@@ -286,6 +286,24 @@ class WorkflowTests(unittest.TestCase):
         report = preview(collector, ServiceDatabase.parse(LAMEDB4))
         self.assertFalse(report["can_apply"])
 
+    def test_conflicting_sid_warns_but_manual_apply_stays_available(self):
+        # Per-channel skips are informational: the conflicting SID is dropped,
+        # the rest of the complete table must still be applicable by hand.
+        # Automatic application stays strict and checks warnings separately.
+        conflict = section(
+            service_record(101, "Sample News HD")
+            + service_record(101, "Renamed News")
+            + service_record(102, "Sample Culture"),
+            0,
+            1,
+        )
+        collector = TableCollector()
+        collector.add(conflict)
+        collector.add(section(lcn_record(1, 101) + lcn_record(2, 102), 1, 1))
+        report = preview(collector, ServiceDatabase.parse(LAMEDB4))
+        self.assertTrue(any("Conflicting" in warning for warning in report["warnings"]))
+        self.assertTrue(report["can_apply"])
+
     def test_crc_disabled_capture_survives_preview_and_reload(self):
         samples = [bytearray(raw) for raw in sample_sections()]
         samples[1][-1] ^= 1

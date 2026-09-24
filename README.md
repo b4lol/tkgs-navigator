@@ -3,7 +3,7 @@
 A local TKGS scanning and channel-ordering plugin for Enigma2 images running
 **Python 3.8 or newer**. It follows a scan → preview → apply flow. No server,
 WebIf, API key or third-party Python package is required. Version:
-**0.4.4 — pending hardware validation**.
+**0.4.5 — pending hardware validation**.
 
 ## What it does
 
@@ -24,6 +24,9 @@ WebIf, API key or third-party Python package is required. Version:
   and at least half of its keys exist in lamedb; otherwise the layout observed in the
   reference is used. The preview names the layout it chose and why.
 - Shows the results first. The Yellow key builds a separate **TKGS Navigator** bouquet.
+  Channels skipped over conflicts (same SID with different names, ambiguous LCNs) are
+  listed as warnings; they do not block applying by hand. Automatic application stays
+  strict and requires a warning-free preview.
   When the table carries the fields, it also builds an alternate HD or SD list, a radio
   bouquet and, if enabled, one bouquet per package.
 - Optionally pads the main bouquet with invisible numbered markers so channel numbers
@@ -47,10 +50,10 @@ Prebuilt packages are in `dist/`. Copy the one that fits your device:
 
 ```sh
 # opkg images such as OpenATV / OpenPLi
-opkg install /tmp/enigma2-plugin-extensions-tkgs-navigator_0.4.4_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-tkgs-navigator_0.4.5_all.ipk
 
 # Python 3 images using dpkg
-dpkg -i /tmp/enigma2-plugin-extensions-tkgs-navigator_0.4.4_all.deb
+dpkg -i /tmp/enigma2-plugin-extensions-tkgs-navigator_0.4.5_all.deb
 ```
 
 Then restart the Enigma2 GUI and open **Plugins → TKGS Navigator**. No install script
