@@ -1,13 +1,14 @@
 # Validation
 
-**49 tests pass** in the development environment. Coverage: the CRC known vector,
-corrupt and partial sections, the CRC fallback retry, version transitions, a
-512-entry deterministic
-malformed-data corpus, lamedb 4/5, SID ambiguities, rollback on a write failure,
-backup integrity, CLI preview/apply/restore, the mock Enigma2 playback and cancel
-lifecycle, DEB/IPK reproducibility and preservation of source files in the package.
-Python 3.8 syntax is also verified; the version running the tests here is 3.14.7.
-A CI matrix is prepared for other Python versions but was not run here.
+**59 tests pass** in the development environment, on Python 3.14.7 and on Python
+3.8.20. Coverage: the CRC known vector, corrupt and partial sections, the CRC fallback
+retry and its propagation to preview and capture files, version transitions, a
+512-entry deterministic malformed-data corpus, lamedb 4/5, SID ambiguities, transponder
+candidates and fallback on no lock or no data, the demux filter byte layout, rollback
+on a write failure, backup integrity, CLI preview/apply/restore, the mock Enigma2
+playback and cancel lifecycle, translation lookup and template sync, DEB/IPK
+reproducibility and preservation of source files in the package. `ruff` and
+`mypy --strict` (core and worker) pass. The CI matrix covers 3.8, 3.10, 3.12 and 3.14.
 
 Development measurement of 24 September 2026, Python 3.14.7 / x86_64:
 
@@ -15,8 +16,8 @@ Development measurement of 24 September 2026, Python 3.14.7 / x86_64:
 |---|---:|
 | Synthetic channel count | 500 |
 | Sections / total bytes | 10 / 17012 |
-| Median of 30 parse runs | 5.485 ms |
-| 95th-percentile parse time | 7.924 ms |
+| Median of 30 parse runs | 5.498 ms |
+| 95th-percentile parse time | 8.718 ms |
 | Unique sections kept for 200 inputs | 10 |
 | Duplicates dropped | 190 |
 

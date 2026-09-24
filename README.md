@@ -3,20 +3,25 @@
 A local TKGS scanning and channel-ordering plugin for Enigma2 images running
 **Python 3.8 or newer**. It follows a scan → preview → apply flow. No server,
 WebIf, API key or third-party Python package is required. Version:
-**0.2.0 — pending hardware validation**.
+**0.3.0 — pending hardware validation**.
 
 ## What it does
 
-- Tunes to the TKGS frequency on Türksat 42°E and waits for tuner lock.
+- Tunes to the TKGS frequency on Türksat 42°E and waits for tuner lock. It tries the
+  configured transponder first, then the known TKGS data transponders (12380 V 27500,
+  12423 H 30000) that exist in the receiver's lamedb, moving on when the tuner does not
+  lock or when no TKGS data arrives within 20 seconds.
 - Reads PID 8181 / table 0xA7 sections in a separate process without blocking the UI.
 - Checks CRC, table version and section completeness; duplicates are not stored.
   If the table is still incomplete after 25 seconds, the hardware CRC check is
   switched off and capturing continues; structural and version checks still apply.
+  Such a preview carries a warning and the capture file records the CRC mode.
 - Stops as soon as the table is complete instead of waiting out the timeout.
   On error or cancellation it returns to the previous channel.
 - Resolves channel names and LCN order locally, matching against lamedb 4/5.
 - Shows the results first. The Yellow key builds a separate **TKGS Navigator** bouquet.
 - Backs up before every change. The Blue key undoes the last change.
+- UI texts are English and translatable with gettext (`locale/TKGSNavigator.pot`).
 
 `lamedb`, the old TKGS plugin and other bouquet contents are left untouched. It does
 not create new services for unknown frequencies; the receiver's built-in network scan
@@ -29,10 +34,10 @@ Prebuilt packages are in `dist/`. Copy the one that fits your device:
 
 ```sh
 # opkg images such as OpenATV / OpenPLi
-opkg install /tmp/enigma2-plugin-extensions-tkgs-navigator_0.2.0_all.ipk
+opkg install /tmp/enigma2-plugin-extensions-tkgs-navigator_0.3.0_all.ipk
 
 # Python 3 images using dpkg
-dpkg -i /tmp/enigma2-plugin-extensions-tkgs-navigator_0.2.0_all.deb
+dpkg -i /tmp/enigma2-plugin-extensions-tkgs-navigator_0.3.0_all.deb
 ```
 
 Then restart the Enigma2 GUI and open **Plugins → TKGS Navigator**. No install script
@@ -48,7 +53,8 @@ supported; actual compatibility on DreamOS/OpenATV/OpenPLi has not been verified
 
 1. In the receiver's channel search, scan the TKGS frequency with network search on.
 2. In the plugin, set the frequency, polarization and symbol rate. The starting values
-   come from the reference package: **12380 V 27500**; currency is not guaranteed.
+   come from the reference package: **12380 V 27500**; currency is not guaranteed. If this
+   transponder is missing or silent, the known TKGS transponders are tried automatically.
 3. Choose the DVB adapter/demux values for the tuner path in use. `adapter0/demux0`
    is the default. There is no automatic path detection on multi-tuner devices.
 4. **Green / OK:** scan. **Red:** cancel while scanning, close when idle.
@@ -73,6 +79,9 @@ python3 tools/benchmark.py
 python3 tools/build.py
 ```
 
+Development checks, as run in CI: `ruff check .`, `ruff format --check .` and `mypy`
+(strict, for `core/` and `worker.py`).
+
 The commands print JSON lines. `scan` never writes to channel files. Exit codes:
 `0` success, `1` error, `2` preview cannot be applied, `130` cancelled.
 
@@ -80,7 +89,7 @@ To capture from a demux already tuned to the TKGS frequency on the device:
 
 ```sh
 python3 -m TKGSNavigator.worker scan --device /dev/dvb/adapter0/demux0 \
-  --lamedb /etc/enigma2/lamedb --timeout 60 --save-capture /tmp/tkgs-capture.json
+  --lamedb /etc/enigma2/lamedb --timeout 60 --idle-timeout 20 --save-capture /tmp/tkgs-capture.json
 ```
 
 Because the package is installed under `Plugins.Extensions`, run these `-m` examples
@@ -117,6 +126,17 @@ TKGS specification or current broadcast recording is available. Other broadcast 
 may be unsupported. Tests run against synthetic sections, corrupt data, file errors and
 mock Enigma2/DVB APIs. It should not be considered verified on a production device until
 picture, tuner routing and broadcast decoding are checked on a real satellite receiver.
+
+## Translations
+
+Compiled catalogs go to `TKGSNavigator/locale/<lang>/LC_MESSAGES/TKGSNavigator.mo` and
+are packaged automatically. Words the plugin does not translate fall back to the
+image's own enigma2 catalog. After changing UI texts, regenerate the template:
+
+```sh
+xgettext --language=Python --keyword=_ --from-code=UTF-8 --sort-by-file \
+  -o TKGSNavigator/locale/TKGSNavigator.pot TKGSNavigator/plugin.py TKGSNavigator/ui/*.py
+```
 
 ## License
 
