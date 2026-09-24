@@ -106,6 +106,9 @@ class Reference:
     def toString(self):
         return self.text
 
+    def toCompareString(self):
+        return self.text.split("::")[0] + ":" if "::" in self.text else self.text
+
 
 class Navigation:
     def __init__(self):
@@ -338,12 +341,13 @@ class ScreenTests(EnigmaTestCase):
     def test_already_playing_target_service_is_not_an_error(self):
         # enigma2 refuses to replay the running service ("Ignore request to play
         # already running service") and returns 1; that must not fail the tune.
+        # The playing reference carries the resolved name after "::".
         self.lamedb(LAMEDB4)
-        self.nav.current = Reference("1:0:19:65:1:1:1A40000:0:0:0:")
+        self.nav.current = Reference("1:0:19:65:1:1:1A40000:0:0:0::Sample News HD")
         real_play = self.nav.playService
 
         def playService(ref):
-            if ref.toString() == self.nav.current.toString():
+            if ref.toCompareString() == self.nav.current.toCompareString():
                 return 1
             return real_play(ref)
 

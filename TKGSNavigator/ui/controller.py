@@ -50,6 +50,12 @@ def playing_demux(session, adapter=0):
     return "/dev/dvb/adapter%d/demux%d" % (adapter, demux)
 
 
+def comparable(ref):
+    """Reference string without the trailing service name, matching how enigma2 compares."""
+    to_compare = getattr(ref, "toCompareString", None)
+    return to_compare() if to_compare else ref.toString()
+
+
 class ScanController:
     def __init__(self, session, listener, config_dir=CONFIG_DIR):
         self.session = session
@@ -123,7 +129,7 @@ class ScanController:
             ("" if candidate.deep or not reason else reason + " ") + message % values
         )
         current = self.session.nav.getCurrentlyPlayingServiceReference()
-        playing = current and current.toString() == candidate.service.reference
+        playing = current and comparable(current) == candidate.service.reference
         # Replaying the running service is refused by enigma2; it is already tuned.
         if not playing and self.session.nav.playService(
             eServiceReference(candidate.service.reference)
@@ -158,7 +164,7 @@ class ScanController:
             status = frontend.getFrontendStatus() if frontend else {}
             locked = (
                 current
-                and current.toString() == self.target_reference
+                and comparable(current) == self.target_reference
                 and status
                 and status.get("tuner_locked")
             )
