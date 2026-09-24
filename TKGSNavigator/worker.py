@@ -51,7 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     scan = commands.add_parser("scan", help="Preview from a live DVB demux or a capture file")
     source = scan.add_mutually_exclusive_group(required=True)
-    source.add_argument("--device", help="Demux already tuned to the TKGS frequency")
+    source.add_argument(
+        "--device",
+        action="append",
+        help="Demux already tuned to the TKGS frequency; repeat to let the first one with data win",
+    )
     source.add_argument("--capture", help="Offline JSON section capture")
     scan.add_argument("--lamedb", required=True)
     scan.add_argument("--save-capture")
@@ -131,6 +135,7 @@ def run_scan(args: argparse.Namespace, interrupted: List[bool]) -> int:
     if args.save_capture:
         workflow.save_capture(args.save_capture, collector)
     report = workflow.preview(collector, database, args.orbital, plan_options(args))
+    report["device"] = collector.device
     emit("result", **report)
     return 0 if report["can_apply"] else 2  # 2: previewed, but not applicable.
 

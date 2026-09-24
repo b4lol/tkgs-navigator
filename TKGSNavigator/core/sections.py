@@ -80,6 +80,7 @@ class TableCollector:
         self.rejected = 0
         self.duplicates = 0
         self.check_crc = check_crc
+        self.device: str | None = None  # Demux the sections came from, when captured live.
 
     def add(self, raw: bytes) -> bool:
         """Store a section; return False when it is invalid, foreign, stale or a duplicate."""

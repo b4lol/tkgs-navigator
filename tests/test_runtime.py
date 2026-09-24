@@ -59,7 +59,7 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(flags, [5, 4])
             self.assertFalse(events[-1]["crc"])
 
-    def test_idle_transponder_stops_early_without_crc_fallback(self):
+    def test_silent_transponder_retries_without_crc_then_gives_up(self):
         clock = [0.0]
 
         def idle_select(readers, writers, errors, interval):
@@ -74,14 +74,59 @@ class CaptureTests(unittest.TestCase):
             events = []
             result = capture("/fake/demux", progress=events.append, idle_timeout=20)
             self.assertEqual(result.parts, {})
-            self.assertTrue(result.check_crc)
-            self.assertLess(clock[0], 21)
+            self.assertFalse(result.check_crc)
+            self.assertTrue(20 <= clock[0] < 31)
             self.assertEqual(events[-1]["sections"], 0)
             self.assertEqual(
                 [filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2],
-                [5],
+                [5, 4],
             )
             closed.assert_called_once_with(42)
+
+    def test_first_demux_with_tkgs_data_wins_and_others_close(self):
+        wire = b"".join(sample_sections())
+        reads = {41: iter([]), 42: iter([wire])}
+
+        def read(fd, size):
+            try:
+                return next(reads[fd])
+            except StopIteration:
+                raise BlockingIOError(11, "again") from None
+
+        opened = iter([41, 42, 43])
+        with patch("TKGSNavigator.core.dvb.os.open", side_effect=lambda *a: next(opened)), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ) as closed, patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, patch(
+            "TKGSNavigator.core.dvb.select.select", return_value=([41, 42], [], [])
+        ), patch("TKGSNavigator.core.dvb.os.read", side_effect=read), patch(
+            "TKGSNavigator.core.dvb.time.monotonic", return_value=0.0
+        ):
+
+            def ioctl_effect(fd, request, *params):
+                if fd == 43 and params:
+                    raise OSError("demux busy")
+
+            ioctl.side_effect = ioctl_effect
+            events = []
+            result = capture(
+                [
+                    "/dev/dvb/adapter0/demux0",
+                    "/dev/dvb/adapter0/demux1",
+                    "/dev/dvb/adapter0/demux2",
+                ],
+                progress=events.append,
+            )
+        self.assertTrue(result.complete)
+        self.assertEqual(result.device, "/dev/dvb/adapter0/demux1")
+        self.assertEqual(events[-1]["device"], "/dev/dvb/adapter0/demux1")
+        self.assertEqual(sorted(call.args[0] for call in closed.call_args_list), [41, 42, 43])
+
+    def test_no_openable_demux_raises(self):
+        with patch("TKGSNavigator.core.dvb.os.open", side_effect=OSError("no device")):
+            with self.assertRaises(OSError):
+                capture(["/dev/dvb/adapter0/demux0", "/dev/dvb/adapter0/demux1"])
+        with self.assertRaises(ValueError):
+            capture([])
 
     def test_table_completed_after_fallback_deadline_keeps_crc(self):
         clock = iter([0.0, 0.0, 30.0])

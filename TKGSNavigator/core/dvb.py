@@ -9,7 +9,7 @@ import platform
 import select
 import struct
 import time
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Dict, Optional, Sequence, Union
 
 from .constants import TKGS_PID, TKGS_TABLE_ID
 from .sections import SectionFramer, TableCollector
@@ -27,7 +27,7 @@ DMX_IMMEDIATE_START = 4
 # Native byte order; struct instead of ctypes, which OE images ship as a separate package.
 FILTER_PARAMETERS = struct.Struct("=H16s16s16s2xII")
 
-Progress = Dict[str, Optional[Union[int, float, bool]]]
+Progress = Dict[str, Optional[Union[int, float, bool, str]]]
 
 
 MAX_RECORD_SECONDS = 600
@@ -104,6 +104,45 @@ def _drain(
     return received, False
 
 
+class _Source:
+    """One demux being listened to until it proves to carry the TKGS table."""
+
+    def __init__(self, device: str, fd: int) -> None:
+        self.device = device
+        self.fd = fd
+        self.framer = SectionFramer()
+        self.collector = TableCollector()
+        self.collector.device = device
+
+    def restart(self, check_crc: bool) -> None:
+        try:
+            fcntl.ioctl(self.fd, ioctl_request(42))
+        except OSError:
+            pass
+        _start_filter(self.fd, check_crc)
+        self.collector.check_crc = check_crc
+
+
+def _open_sources(devices: Sequence[str]) -> list[_Source]:
+    sources, errors = [], []
+    for device in devices:
+        try:
+            fd = _open(device)
+        except OSError as error:
+            errors.append(error)
+            continue
+        try:
+            _start_filter(fd)
+        except OSError as error:
+            _close(fd)
+            errors.append(error)
+            continue
+        sources.append(_Source(device, fd))
+    if not sources:
+        raise errors[0] if errors else OSError("No demux device to read")
+    return sources
+
+
 def _snapshot(collector: TableCollector, elapsed: float, timeout: int) -> Progress:
     return {
         "elapsed": round(elapsed, 1),
@@ -113,76 +152,101 @@ def _snapshot(collector: TableCollector, elapsed: float, timeout: int) -> Progre
         "rejected": collector.rejected,
         "duplicates": collector.duplicates,
         "crc": collector.check_crc,
+        "device": collector.device,
     }
 
 
 def capture(
-    device: str,
+    device: str | Sequence[str],
     timeout: int = 60,
     cancelled: Callable[[], bool] = lambda: False,
     progress: Callable[[Progress], None] = lambda data: None,
     idle_timeout: int | None = None,
 ) -> TableCollector:
-    """Collect one TKGS table.
+    """Collect one TKGS table from one demux, or from the first of several that carries it.
 
-    Stops early when the table is complete, or when no data arrives within idle_timeout.
+    Every given demux gets the TKGS filter; the first one to deliver a valid section is
+    kept and the others are closed, so the caller need not know which demux the tuner
+    feeds. Stops early when the table is complete. When nothing arrives within
+    idle_timeout, hardware CRC checking is switched off (a table with bad CRCs would
+    otherwise never be delivered) and the capture gives up after half that time more.
 
     Raises:
-        ValueError: on an out-of-range timeout.
+        ValueError: on an out-of-range timeout or an empty device list.
         Cancelled: when cancelled() turns true.
-        OSError: when the demux cannot be opened, filtered or read.
+        OSError: when no demux can be opened and filtered, or a read fails.
     """
     if not 1 <= timeout <= 180:
         raise ValueError("Scan timeout must be between 1 and 180 seconds")
     if idle_timeout is not None and not 1 <= idle_timeout <= timeout:
         raise ValueError("Idle timeout must be between 1 second and the scan timeout")
-    collector, framer = TableCollector(), SectionFramer()
-
-    def consume(raw: bytes) -> bool:
-        collector.add(raw)
-        return collector.complete
-
-    fd = _open(device)
+    devices = [device] if isinstance(device, str) else list(dict.fromkeys(device))
+    if not devices:
+        raise ValueError("No demux device given")
+    sources = _open_sources(devices)
+    chosen: _Source | None = None
     try:
-        _start_filter(fd)
         started = time.monotonic()
         next_update = started
         received = False
-        while not collector.complete:
+        crc_off_at: float | None = None
+        while chosen is None or not chosen.collector.complete:
             if cancelled():
                 raise Cancelled("Scan cancelled")
             now = time.monotonic()
             remaining = timeout - (now - started)
             if remaining <= 0:
                 break
-            ready, _, _ = select.select([fd], [], [], min(SELECT_INTERVAL, remaining))
-            if ready:
-                got, overflowed = _drain(fd, framer, cancelled, consume)
+            active = [chosen] if chosen is not None else sources
+            wait = min(SELECT_INTERVAL, remaining)
+            ready, _, _ = select.select([source.fd for source in active], [], [], wait)
+            for source in active:
+                if source.fd not in ready:
+                    continue
+                collector = source.collector
+
+                def consume(raw: bytes, collector: TableCollector = collector) -> bool:
+                    collector.add(raw)
+                    return collector.complete
+
+                got, overflowed = _drain(source.fd, source.framer, cancelled, consume)
                 received = received or got
                 if overflowed:
-                    framer = SectionFramer()
+                    source.framer = SectionFramer()
                     collector.rejected += 1
+                if chosen is None and collector.parts:
+                    chosen = source
+                    for other in sources:
+                        if other is not source:
+                            _close(other.fd)
+                    sources = [source]
+                    break
             now = time.monotonic()
-            if idle_timeout is not None and not received and now - started >= idle_timeout:
-                progress(_snapshot(collector, now - started, timeout))
-                break
-            if (
-                not collector.complete
-                and collector.check_crc
-                and now - started >= CRC_FALLBACK_AFTER
+            elapsed = now - started
+            lead = chosen or sources[0]
+            silent = idle_timeout is not None and not received
+            if chosen is None and crc_off_at is None:
+                if elapsed >= CRC_FALLBACK_AFTER or (silent and elapsed >= (idle_timeout or 0)):
+                    for source in sources:
+                        source.restart(check_crc=False)
+                    crc_off_at = now
+            elif (
+                chosen is not None
+                and not chosen.collector.complete
+                and chosen.collector.check_crc
+                and elapsed >= CRC_FALLBACK_AFTER
             ):
-                try:
-                    fcntl.ioctl(fd, ioctl_request(42))
-                except OSError:
-                    pass
-                _start_filter(fd, check_crc=False)
-                collector.check_crc = False
-            if now >= next_update or collector.complete:
-                progress(_snapshot(collector, now - started, timeout))
+                chosen.restart(check_crc=False)
+            if silent and crc_off_at is not None and now - crc_off_at >= (idle_timeout or 0) / 2:
+                progress(_snapshot(lead.collector, elapsed, timeout))
+                break
+            if now >= next_update or (chosen is not None and chosen.collector.complete):
+                progress(_snapshot(lead.collector, elapsed, timeout))
                 next_update = now + PROGRESS_INTERVAL
-        return collector
+        return (chosen or sources[0]).collector
     finally:
-        _close(fd)
+        for source in sources:
+            _close(source.fd)
 
 
 def record(
