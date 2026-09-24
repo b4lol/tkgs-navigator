@@ -143,6 +143,40 @@ class RecordingFileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["layout"]["layout"], "records")
 
+    def test_worker_applies_category_bouquets_and_restores(self):
+        worker = str(ROOT / "TKGSNavigator/worker.py")
+        folder = Path(self.temp.name)
+        (folder / "lamedb").write_text(LAMEDB4, encoding="utf-8")
+        common = ["--capture", str(self.path), "--config-dir", str(folder), "--extension", "7"]
+        result = subprocess.run(
+            [sys.executable, worker, "apply", *common, "--categories", "--bouquet-first"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        event = json.loads(result.stdout)
+        files = [item["file"] for item in event["bouquets"]]
+        self.assertEqual(
+            files, ["userbouquet.tkgs_navigator.tv", "userbouquet.tkgs_navigator_pkg0.tv"]
+        )
+        self.assertTrue(all((folder / name).exists() for name in files))
+        self.assertIn(b"tkgs_navigator.tv", (folder / "bouquets.tv").read_bytes().splitlines()[1])
+        result = subprocess.run(
+            [
+                sys.executable,
+                worker,
+                "restore",
+                "--config-dir",
+                str(folder),
+                "--backup",
+                event["backup"],
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any((folder / name).exists() for name in files))
+
 
 if __name__ == "__main__":
     unittest.main()

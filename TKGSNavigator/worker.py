@@ -13,11 +13,13 @@ from typing import Any, List, Optional, Sequence
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from TKGSNavigator.core import dvb, inspect, workflow
+    from TKGSNavigator.core.bouquets import PlanOptions
     from TKGSNavigator.core.constants import DEFAULT_ORBITAL
     from TKGSNavigator.core.lamedb import ServiceDatabase
     from TKGSNavigator.core.storage import BouquetStore
 else:
     from .core import dvb, inspect, workflow
+    from .core.bouquets import PlanOptions
     from .core.constants import DEFAULT_ORBITAL
     from .core.lamedb import ServiceDatabase
     from .core.storage import BouquetStore
@@ -25,6 +27,23 @@ else:
 
 def emit(event: str, **values: Any) -> None:
     print(json.dumps(dict(event=event, **values), ensure_ascii=True), flush=True)
+
+
+def add_plan_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--prefer", choices=["hd", "sd"], default="hd", help="Variant for the main bouquet"
+    )
+    parser.add_argument("--categories", action="store_true", help="One bouquet per package")
+    parser.add_argument(
+        "--align-lcn", action="store_true", help="Pad with spacers so numbers match LCNs"
+    )
+    parser.add_argument(
+        "--bouquet-first", action="store_true", help="Link the bouquets at the top of the list"
+    )
+
+
+def plan_options(args: argparse.Namespace) -> PlanOptions:
+    return PlanOptions(args.prefer == "hd", args.categories, args.align_lcn, args.bouquet_first)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
     scan.add_argument("--extension", type=int, help="Subtable to use from a raw recording")
+    add_plan_arguments(scan)
     apply = commands.add_parser(
         "apply", help="Validate a full capture, back up, and write the bouquet"
     )
@@ -51,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--config-dir", required=True)
     apply.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
     apply.add_argument("--extension", type=int, help="Subtable to use from a raw recording")
+    add_plan_arguments(apply)
     restore = commands.add_parser("restore", help="Restore the given backup")
     restore.add_argument("--config-dir", required=True)
     restore.add_argument("--backup", required=True)
@@ -109,7 +130,7 @@ def run_scan(args: argparse.Namespace, interrupted: List[bool]) -> int:
         raise dvb.Cancelled("Scan cancelled")
     if args.save_capture:
         workflow.save_capture(args.save_capture, collector)
-    report = workflow.preview(collector, database, args.orbital)
+    report = workflow.preview(collector, database, args.orbital, plan_options(args))
     emit("result", **report)
     return 0 if report["can_apply"] else 2  # 2: previewed, but not applicable.
 
@@ -134,7 +155,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return run_inspect(args)
         if args.command == "apply":
             report = workflow.apply_capture(
-                args.capture, args.config_dir, args.orbital, args.extension
+                args.capture, args.config_dir, args.orbital, args.extension, plan_options(args)
             )
             emit("applied", **report)
         else:

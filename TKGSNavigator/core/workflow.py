@@ -6,15 +6,16 @@ import base64
 from dataclasses import asdict
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+from .bouquets import DEFAULT_OPTIONS, PlanOptions, plan_bouquets
 from .constants import DEFAULT_ORBITAL, TKGS_TABLE_ID
 from .dvb import MAX_RECORD_SECTIONS
 from .lamedb import Service, ServiceDatabase
 from .parser import Channel, ParseResult, parse_channels
 from .records import LayoutMismatch, parse_record_sections
 from .sections import TableCollector
-from .storage import BouquetStore, atomic_write
+from .storage import BouquetPlan, BouquetStore, atomic_write
 
 MAX_CAPTURE_BYTES = 2 * 1024 * 1024
 MAX_CAPTURE_SECTIONS = 512
@@ -145,18 +146,22 @@ def parse_table(
 
 
 def analyze(
-    collector: TableCollector, database: ServiceDatabase, orbital: int = DEFAULT_ORBITAL
-) -> tuple[Report, Matched]:
-    """Parse and match once, returning both the JSON report and the matched pairs."""
+    collector: TableCollector,
+    database: ServiceDatabase,
+    orbital: int = DEFAULT_ORBITAL,
+    options: PlanOptions = DEFAULT_OPTIONS,
+) -> tuple[Report, Optional[BouquetPlan]]:
+    """Parse, match and plan once, returning the JSON report and the bouquet plan."""
     result, evidence = parse_table(collector, database, orbital)
     matched, skipped = database.match(result.channels, orbital)
     warnings = list(result.warnings)
     if not collector.complete:
         warnings.append("TKGS table is incomplete; applying is disabled.")
     if not matched:
-        warnings.append("No channels matched the receiver's TV services.")
+        warnings.append("No channels matched the receiver's services.")
     if not collector.check_crc:
         warnings.append("Captured with the CRC check disabled; review the names before applying.")
+    plan = plan_bouquets(matched, options) if matched else None
     report: Report = {
         "schema": 1,
         "complete": collector.complete,
@@ -173,16 +178,23 @@ def analyze(
             for channel, service in matched
         ],
         "skipped": skipped,
+        "bouquets": [
+            {"file": file.filename, "title": file.title, "services": file.services}
+            for file in (plan.files if plan else ())
+        ],
         "warnings": warnings,
-        "can_apply": collector.complete and bool(matched) and not result.warnings,
+        "can_apply": collector.complete and plan is not None and not result.warnings,
     }
-    return report, matched
+    return report, plan
 
 
 def preview(
-    collector: TableCollector, database: ServiceDatabase, orbital: int = DEFAULT_ORBITAL
+    collector: TableCollector,
+    database: ServiceDatabase,
+    orbital: int = DEFAULT_ORBITAL,
+    options: PlanOptions = DEFAULT_OPTIONS,
 ) -> Report:
-    return analyze(collector, database, orbital)[0]
+    return analyze(collector, database, orbital, options)[0]
 
 
 def apply_capture(
@@ -190,18 +202,19 @@ def apply_capture(
     config_dir: str | Path,
     orbital: int = DEFAULT_ORBITAL,
     extension: int | None = None,
+    options: PlanOptions = DEFAULT_OPTIONS,
 ) -> Report:
-    """Re-validate a capture against the current lamedb, back up and write the bouquet.
+    """Re-validate a capture against the current lamedb, back up and write the bouquets.
 
     Raises:
         ValueError: when the table is incomplete, ambiguous or matches nothing.
     """
     collector = load_capture(capture_path, extension)
     database = ServiceDatabase.load(Path(config_dir) / "lamedb")
-    report, matched = analyze(collector, database, orbital)
-    if not report["can_apply"]:
+    report, plan = analyze(collector, database, orbital, options)
+    if not report["can_apply"] or plan is None:
         raise ValueError(
             "A complete and unambiguous table is required: " + " ".join(report["warnings"])
         )
-    report["backup"] = BouquetStore(config_dir).apply(matched)
+    report["backup"] = BouquetStore(config_dir).apply(plan)
     return report

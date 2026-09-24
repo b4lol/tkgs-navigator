@@ -15,13 +15,14 @@ from tests.helpers import (
     section,
     service_record,
 )
+from TKGSNavigator.core.bouquets import plan_bouquets, render
 from TKGSNavigator.core.constants import TKGS_TRANSPONDERS, TuningTarget
 from TKGSNavigator.core.crc import crc32_mpeg
 from TKGSNavigator.core.dvb import FILTER_PARAMETERS, filter_parameters, ioctl_request
 from TKGSNavigator.core.lamedb import Service, ServiceDatabase, Transponder
 from TKGSNavigator.core.parser import Channel, parse_channels
 from TKGSNavigator.core.sections import Section, SectionFramer, TableCollector
-from TKGSNavigator.core.storage import BACKUP_DIR, BOUQUET, INDEX, BouquetStore, render_bouquet
+from TKGSNavigator.core.storage import BACKUP_DIR, BOUQUET, INDEX, BouquetStore
 from TKGSNavigator.core.text import decode_name
 from TKGSNavigator.core.workflow import apply_capture, load_capture, preview, save_capture
 
@@ -204,13 +205,14 @@ class StorageTests(unittest.TestCase):
         self.store = BouquetStore(self.root)
         self.db = ServiceDatabase.parse(LAMEDB4)
         self.matched = self.db.match(parse_channels(sample_sections()).channels)[0]
+        self.plan = plan_bouquets(self.matched)
         self.original = b"#NAME My bouquets\n#SERVICE unrelated\n"
         (self.root / INDEX).write_bytes(self.original)
 
     def test_apply_backup_restore_and_idempotency(self):
-        ident = self.store.apply(self.matched)
+        ident = self.store.apply(self.plan)
         self.assertTrue(ident)
-        self.assertIsNone(self.store.apply(self.matched))
+        self.assertIsNone(self.store.apply(self.plan))
         self.assertIn(b"#SERVICE unrelated", (self.root / INDEX).read_bytes())
         self.assertIn(b"1:0:19:65:", (self.root / BOUQUET).read_bytes())
         self.store.restore(ident)
@@ -219,7 +221,7 @@ class StorageTests(unittest.TestCase):
 
     def test_empty_results_preserve_files(self):
         with self.assertRaises(ValueError):
-            self.store.apply([])
+            self.store.apply(plan_bouquets([]))
         self.assertEqual((self.root / INDEX).read_bytes(), self.original)
         self.assertFalse((self.root / BOUQUET).exists())
 
@@ -237,31 +239,31 @@ class StorageTests(unittest.TestCase):
 
         with patch.object(storage, "atomic_write", side_effect=fail_once):
             with self.assertRaises(OSError):
-                self.store.apply(self.matched)
+                self.store.apply(self.plan)
         self.assertEqual((self.root / INDEX).read_bytes(), self.original)
         self.assertFalse((self.root / BOUQUET).exists())
 
     def test_restore_refuses_external_changes(self):
-        ident = self.store.apply(self.matched)
+        ident = self.store.apply(self.plan)
         (self.root / INDEX).write_bytes(b"someone else's new channels")
         with self.assertRaises(ValueError):
             self.store.restore(ident)
         self.assertEqual((self.root / INDEX).read_bytes(), b"someone else's new channels")
 
     def test_backup_tamper_is_detected(self):
-        ident = self.store.apply(self.matched)
+        ident = self.store.apply(self.plan)
         (self.root / BACKUP_DIR / ident / INDEX).write_bytes(b"corrupt")
         with self.assertRaises(ValueError):
             self.store.restore(ident)
 
     def test_newline_in_name_does_not_inject_service(self):
-        rendered = render_bouquet([(Channel(1, 101, "A\n#SERVICE evil"), self.db.services[0])])
+        rendered = render("T", [(Channel(1, 101, "A\n#SERVICE evil"), self.db.services[0])])
         self.assertEqual(rendered.count(b"\n#SERVICE "), 1)
 
     def test_symlink_and_backup_traversal_refused(self):
         (self.root / BOUQUET).symlink_to(self.root / INDEX)
         with self.assertRaises(ValueError):
-            self.store.apply(self.matched)
+            self.store.apply(self.plan)
         with self.assertRaises(ValueError):
             self.store.restore("../../outside")
 
