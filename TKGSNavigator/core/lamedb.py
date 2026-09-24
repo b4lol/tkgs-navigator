@@ -51,8 +51,10 @@ class ServiceDatabase:
         self.transponders = transponders
         self.services = services
         self.by_sid: dict[int, list[Service]] = {}
+        self.by_key: dict[TransponderKey, list[Service]] = {}
         for service in services:
             self.by_sid.setdefault(service.sid, []).append(service)
+            self.by_key.setdefault(service.key, []).append(service)
 
     @classmethod
     def load(cls, path: str | Path) -> ServiceDatabase:
@@ -147,7 +149,7 @@ class ServiceDatabase:
             and abs(tp.frequency - frequency_mhz * 1000) <= 2000
             and abs(tp.symbol_rate - symbol_rate_ksym * 1000) <= 1000
         }
-        candidates = [service for service in self.services if service.key in keys]
+        candidates = [service for key in keys for service in self.by_key.get(key, ())]
         if not candidates:
             raise ValueError(
                 "TKGS frequency is not in the service database. "
@@ -173,6 +175,18 @@ class ServiceDatabase:
                 continue
             candidates.append((target, service))
         return candidates
+
+    def orbital_targets(self, orbital: int = DEFAULT_ORBITAL) -> list[TuningTarget]:
+        """Transponders on the orbital that have at least one service, by frequency."""
+        letters = {code: letter for letter, code in POLARIZATIONS.items()}
+        targets = {
+            TuningTarget(
+                round(tp.frequency / 1000), letters[tp.polarization], round(tp.symbol_rate / 1000)
+            )
+            for key, tp in self.transponders.items()
+            if tp.orbital == orbital and key in self.by_key and tp.polarization in letters
+        }
+        return sorted(targets)
 
     def _on_orbital(self, service: Service, orbital: int) -> bool:
         transponder = self.transponders.get(service.key)
