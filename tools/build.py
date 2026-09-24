@@ -17,7 +17,7 @@ import tarfile
 import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 PACKAGE = "enigma2-plugin-extensions-tkgs-navigator"
 MODULE = "TKGSNavigator"
 SLUG = "tkgs-navigator"

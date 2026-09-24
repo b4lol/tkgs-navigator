@@ -1,3 +1,3 @@
 """TKGS Navigator: local channel discovery for Python 3 Enigma2 images."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"

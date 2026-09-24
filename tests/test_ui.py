@@ -369,8 +369,10 @@ class ScreenTests(EnigmaTestCase):
         self.assertEqual(screen, "ServiceScan")
         (scan,) = args[0]
         self.assertEqual((scan["flags"], scan["feid"]), (0x10, 1))
+        # eComponentScan.addInitial takes the typed parameters object directly.
+        self.assertTrue(all(isinstance(t, SatelliteParameters) for t in scan["transponders"]))
         self.assertEqual(
-            [(t.satellite.frequency, t.satellite.polarisation) for t in scan["transponders"]],
+            [(t.frequency, t.polarisation) for t in scan["transponders"]],
             [(12380000, 1), (12423000, 0)],
         )
         self.lamedb(LAMEDB4)

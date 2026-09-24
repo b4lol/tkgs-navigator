@@ -48,9 +48,7 @@ def _satellite_parameters(enigma, target):
     parameters.modulation = satellite.Modulation_QPSK
     parameters.rolloff = satellite.RollOff_alpha_0_35
     parameters.pilot = satellite.Pilot_Unknown
-    frontend = enigma.eDVBFrontendParameters()
-    frontend.setDVBS(parameters)
-    return frontend
+    return parameters
 
 
 def run_channel_search(session, on_done):
