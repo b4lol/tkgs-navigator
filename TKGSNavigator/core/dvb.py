@@ -1,10 +1,10 @@
 """Nonblocking Linux DVB section acquisition; bounded work per event loop."""
-import ctypes
 import errno
 import fcntl
 import os
 import platform
 import select
+import struct
 import time
 
 from .constants import TKGS_PID, TKGS_TABLE_ID
@@ -15,16 +15,17 @@ READ_SIZE = 8192
 SELECT_INTERVAL = 0.2
 PROGRESS_INTERVAL = 0.5
 CRC_FALLBACK_AFTER = 25.0
+DMX_CHECK_CRC = 1
+DMX_IMMEDIATE_START = 4
+
+# struct dmx_sct_filter_params: u16 pid, u8 filter/mask/mode[16], 2 pad bytes, u32 timeout, u32 flags.
+# Native byte order; struct instead of ctypes, which OE images ship as a separate package.
+FILTER_PARAMETERS = struct.Struct("=H16s16s16s2xII")
 
 
-class Filter(ctypes.Structure):
-    _fields_ = [("value", ctypes.c_ubyte * 16), ("mask", ctypes.c_ubyte * 16),
-                ("mode", ctypes.c_ubyte * 16)]
-
-
-class FilterParameters(ctypes.Structure):
-    _fields_ = [("pid", ctypes.c_ushort), ("filter", Filter),
-                ("timeout", ctypes.c_uint), ("flags", ctypes.c_uint)]
+def filter_parameters(check_crc=True):
+    flags = (DMX_CHECK_CRC if check_crc else 0) | DMX_IMMEDIATE_START
+    return FILTER_PARAMETERS.pack(TKGS_PID, bytes([TKGS_TABLE_ID]), b"\xff", b"", 0, flags)
 
 
 def ioctl_request(number, size=0, write=False, machine=None):
@@ -40,11 +41,7 @@ class Cancelled(Exception):
 
 
 def _start_filter(fd, check_crc=True):
-    params = FilterParameters()
-    params.pid = TKGS_PID
-    params.filter.value[0], params.filter.mask[0] = TKGS_TABLE_ID, 0xFF
-    params.flags = (1 if check_crc else 0) | 4  # DMX_CHECK_CRC | DMX_IMMEDIATE_START.
-    fcntl.ioctl(fd, ioctl_request(43, ctypes.sizeof(params), True), params)
+    fcntl.ioctl(fd, ioctl_request(43, FILTER_PARAMETERS.size, True), filter_parameters(check_crc))
 
 
 def _snapshot(collector, elapsed, timeout):

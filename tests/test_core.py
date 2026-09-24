@@ -1,14 +1,14 @@
 import base64
-import ctypes
 import json
 from pathlib import Path
 import random
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from TKGSNavigator.core.crc import crc32_mpeg
-from TKGSNavigator.core.dvb import FilterParameters, ioctl_request
+from TKGSNavigator.core.dvb import FILTER_PARAMETERS, filter_parameters, ioctl_request
 from TKGSNavigator.core.lamedb import ServiceDatabase, Service, Transponder
 from TKGSNavigator.core.parser import Channel, parse_channels
 from TKGSNavigator.core.sections import Section, SectionFramer, TableCollector
@@ -81,7 +81,12 @@ class SectionTests(unittest.TestCase):
         self.assertEqual(collector.rejected, 1)
 
     def test_ioctl_abi(self):
-        self.assertEqual(ctypes.sizeof(FilterParameters), 60)
+        self.assertEqual(FILTER_PARAMETERS.size, 60)
+        expected = bytearray(60)
+        expected[0:2] = (8181).to_bytes(2, sys.byteorder)
+        expected[2], expected[18] = 0xA7, 0xFF
+        expected[56:60] = (5).to_bytes(4, sys.byteorder)
+        self.assertEqual(filter_parameters(), bytes(expected))
         self.assertEqual(ioctl_request(43, 60, True, "aarch64"), 0x403C6F2B)
         self.assertEqual(ioctl_request(43, 60, True, "mipsel"), 0x803C6F2B)
         self.assertEqual(ioctl_request(42, machine="mips"), 0x20006F2A)

@@ -8,7 +8,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-from TKGSNavigator.core.dvb import Cancelled, capture
+from TKGSNavigator.core.dvb import FILTER_PARAMETERS, Cancelled, capture
 from TKGSNavigator.core.lamedb import ServiceDatabase
 from TKGSNavigator.core.sections import TableCollector
 from TKGSNavigator.core.storage import BOUQUET
@@ -16,6 +16,10 @@ from TKGSNavigator.core.workflow import preview, save_capture
 from tests.helpers import LAMEDB4, sample_sections
 
 SCREEN_MODULE = "TKGSNavigator.ui.screen"
+
+
+def filter_flags(params):
+    return FILTER_PARAMETERS.unpack(params)[-1]
 
 
 class CaptureTests(unittest.TestCase):
@@ -30,7 +34,7 @@ class CaptureTests(unittest.TestCase):
             result = capture("/fake/demux", progress=events.append)
             self.assertTrue(result.complete)
             self.assertEqual(read.call_count, 1)
-            self.assertEqual(ioctl.call_args_list[0].args[2].flags, 5)
+            self.assertEqual(filter_flags(ioctl.call_args_list[0].args[2]), 5)
             self.assertEqual(events[0]["sections"], 2)
             closed.assert_called_once_with(42)
 
@@ -50,7 +54,7 @@ class CaptureTests(unittest.TestCase):
             result = capture("/fake/demux", progress=events.append)
             self.assertFalse(result.complete)
             self.assertFalse(result.check_crc)
-            flags = [call.args[2].flags for call in ioctl.call_args_list if len(call.args) > 2]
+            flags = [filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2]
             self.assertEqual(flags, [5, 4])
             self.assertFalse(events[-1]["crc"])
 
