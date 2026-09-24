@@ -6,7 +6,7 @@ ambiguities are checked explicitly; unsupported variants are not guessed.
 from dataclasses import dataclass
 
 from .sections import Section
-from .text import clean_name, decode_name
+from .text import decode_name
 
 
 @dataclass(frozen=True)

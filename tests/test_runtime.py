@@ -25,7 +25,7 @@ def filter_flags(params):
 
 class CaptureTests(unittest.TestCase):
     def test_nonblocking_capture_closes_fd_and_stops_early(self):
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42) as opened, \
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
              patch("TKGSNavigator.core.dvb.os.close") as closed, \
              patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, \
              patch("TKGSNavigator.core.dvb.select.select", return_value=([42], [], [])), \

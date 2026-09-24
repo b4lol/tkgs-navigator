@@ -72,7 +72,7 @@ class BouquetStore:
             try:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                raise ValueError("Another TKGS Navigator operation is in progress")
+                raise ValueError("Another TKGS Navigator operation is in progress") from None
             try:
                 yield
             finally:
