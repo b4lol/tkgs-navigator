@@ -7,10 +7,9 @@ import platform
 import select
 import time
 
+from .constants import TKGS_PID, TKGS_TABLE_ID
 from .sections import SectionFramer, TableCollector
 
-TKGS_PID = 8181
-TKGS_TABLE_ID = 0xA7
 READS_PER_WAKE = 32
 READ_SIZE = 8192
 SELECT_INTERVAL = 0.2

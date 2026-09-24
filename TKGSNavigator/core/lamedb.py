@@ -3,9 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import csv
 
-TV_SERVICE_TYPES = (1, 4, 17, 22, 25, 31, 32)
-POLARIZATIONS = {"H": 0, "V": 1, "L": 2, "R": 3}
-DEFAULT_ORBITAL = 420  # Türksat 42.0°E, expressed in tenths of a degree.
+from .constants import DEFAULT_ORBITAL, POLARIZATIONS, TV_SERVICE_TYPES
 
 
 @dataclass(frozen=True)

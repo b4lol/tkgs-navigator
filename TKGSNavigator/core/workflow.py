@@ -4,7 +4,8 @@ from pathlib import Path
 import base64
 import json
 
-from .lamedb import ServiceDatabase, DEFAULT_ORBITAL
+from .constants import DEFAULT_ORBITAL
+from .lamedb import ServiceDatabase
 from .parser import parse_channels
 from .sections import TableCollector
 from .storage import BouquetStore, atomic_write

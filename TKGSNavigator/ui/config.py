@@ -1,8 +1,10 @@
 """Persistent plugin settings, created lazily on first use."""
 from Components.config import (config, ConfigSubsection, ConfigInteger, ConfigSelection)
 
-DEFAULTS = {"frequency": 12380, "polarization": "V", "symbol_rate": 27500,
-            "timeout": 60, "adapter": 0, "demux": 0}
+from ..core.constants import TKGS_TRANSPONDERS
+
+DEFAULTS = {"frequency": TKGS_TRANSPONDERS[0].frequency, "polarization": TKGS_TRANSPONDERS[0].polarization,
+            "symbol_rate": TKGS_TRANSPONDERS[0].symbol_rate, "timeout": 60, "adapter": 0, "demux": 0}
 
 
 def settings():

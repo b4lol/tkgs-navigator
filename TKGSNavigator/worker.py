@@ -8,12 +8,14 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from TKGSNavigator.core import dvb
-    from TKGSNavigator.core.lamedb import ServiceDatabase, DEFAULT_ORBITAL
+    from TKGSNavigator.core.constants import DEFAULT_ORBITAL
+    from TKGSNavigator.core.lamedb import ServiceDatabase
     from TKGSNavigator.core.storage import BouquetStore
     from TKGSNavigator.core.workflow import apply_capture, load_capture, preview, save_capture
 else:
     from .core import dvb
-    from .core.lamedb import ServiceDatabase, DEFAULT_ORBITAL
+    from .core.constants import DEFAULT_ORBITAL
+    from .core.lamedb import ServiceDatabase
     from .core.storage import BouquetStore
     from .core.workflow import apply_capture, load_capture, preview, save_capture
 

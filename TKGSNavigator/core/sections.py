@@ -1,6 +1,7 @@
 """Bounded MPEG section assembly and version-aware table collection."""
 from dataclasses import dataclass
 
+from .constants import TKGS_TABLE_ID
 from .crc import crc32_mpeg
 
 
@@ -16,7 +17,7 @@ class SectionFramer:
         offset = 0
         while len(self.pending) - offset >= 3:
             size = 3 + ((self.pending[offset + 1] & 15) << 8 | self.pending[offset + 2])
-            if self.pending[offset] != 0xA7 or not self.pending[offset + 1] & 0x80 or size < 12:
+            if self.pending[offset] != TKGS_TABLE_ID or not self.pending[offset + 1] & 0x80 or size < 12:
                 offset += 1
                 continue
             if len(self.pending) - offset < size:
@@ -37,7 +38,7 @@ class Section:
 
     @classmethod
     def parse(cls, raw, check_crc=True):
-        if len(raw) < 12 or raw[0] != 0xA7 or not raw[1] & 0x80:
+        if len(raw) < 12 or raw[0] != TKGS_TABLE_ID or not raw[1] & 0x80:
             raise ValueError("Invalid TKGS section header")
         length = 3 + ((raw[1] & 15) << 8 | raw[2])
         if length != len(raw) or not raw[5] & 1 or raw[6] > raw[7]:
