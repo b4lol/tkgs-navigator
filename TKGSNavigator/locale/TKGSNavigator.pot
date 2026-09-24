@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: TKGSNavigator 0.3.0\n"
+"Project-Id-Version: TKGSNavigator 0.4.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-24 16:59+0300\n"
+"POT-Creation-Date: 2026-09-24 17:24+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -21,191 +21,236 @@ msgstr ""
 msgid "Local TKGS scan and channel ordering"
 msgstr ""
 
-#: TKGSNavigator/ui/config.py:23
-msgid "Horizontal"
-msgstr ""
-
-#: TKGSNavigator/ui/config.py:23
-msgid "Vertical"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:40
-msgid "Frequency (MHz)"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:41
-msgid "Polarization"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:42
-msgid "Symbol rate (kSym/s)"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:43
-msgid "Max scan (s)"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:44
-msgid "DVB adapter"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:45
-msgid "Demux number"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:50
-msgid "Türksat 42°E · Local scan · Preview and apply"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:51
-msgid "Check the settings, then press Green to scan."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:53
-msgid ""
-"The service database is left untouched. The new list is written to a "
-"separate bouquet."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:56 TKGSNavigator/ui/screen.py:201
-#: TKGSNavigator/ui/screen.py:314
-msgid "Close"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:57
-msgid "Scan"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:58
-msgid "Apply"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:59
-msgid "Undo"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:136
+#: TKGSNavigator/ui/checks.py:29
 msgid "Cannot scan while a recording is in progress."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:142
+#: TKGSNavigator/ui/checks.py:31
+msgid "No tuner is set up for Türksat 42.0°E."
+msgstr ""
+
+#: TKGSNavigator/ui/checks.py:36
 msgid ""
 "No TKGS transponder is in the service database. Run the receiver's network "
 "scan first."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:151
+#: TKGSNavigator/ui/checks.py:56
+msgid "Open the channel search now?"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:33
+msgid "Horizontal"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:33
+msgid "Vertical"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:38
+msgid "Automatic"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:38
+msgid "Manual"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:57
+msgid "Frequency (MHz)"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:58
+msgid "Polarization"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:59
+msgid "Symbol rate (kSym/s)"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:60
+msgid "Max scan (s)"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:61
+msgid "Demux selection"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:62
+msgid "DVB adapter"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:63
+msgid "Demux number"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:64
+msgid "Main list"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:65
+msgid "Category bouquets"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:66
+msgid "Channel number = LCN"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:67
+msgid "Bouquet at the top"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:68
+msgid "Daily automatic update"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:69
+msgid "Update hour"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:70
+msgid "Apply updates automatically"
+msgstr ""
+
+#: TKGSNavigator/ui/config.py:104
 msgid "Selected DVB device not found: "
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:179
+#: TKGSNavigator/ui/controller.py:111
 #, python-format
 msgid ""
 "Tuning to %(frequency)d %(polarization)s %(symbol_rate)d; waiting for tuner "
 "lock…"
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:183
+#: TKGSNavigator/ui/controller.py:115
 msgid "Could not play the TKGS service"
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:185
-msgid "Cancel"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:242
+#: TKGSNavigator/ui/controller.py:167
 msgid "Tuner did not lock."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:243
+#: TKGSNavigator/ui/controller.py:168
 msgid "Tuner did not lock. Check the frequency and satellite settings."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:251
+#: TKGSNavigator/ui/controller.py:175
 msgid "Fetching the TKGS table…"
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:252
+#: TKGSNavigator/ui/controller.py:176
 msgid "Backing up and writing the list…"
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:253
+#: TKGSNavigator/ui/controller.py:177
 msgid "Restoring the previous list…"
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:270
+#: TKGSNavigator/ui/controller.py:194
 msgid "Process output exceeded the limit."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:287
+#: TKGSNavigator/ui/controller.py:221
+msgid "No TKGS data on this transponder."
+msgstr ""
+
+#: TKGSNavigator/ui/controller.py:241 TKGSNavigator/ui/screen.py:116
+#, python-format
+msgid "Operation failed (code %s)."
+msgstr ""
+
+#: TKGSNavigator/ui/controller.py:268
+msgid "Waiting for the file operation to finish…"
+msgstr ""
+
+#: TKGSNavigator/ui/controller.py:276
+msgid "Stopping the scan…"
+msgstr ""
+
+#: TKGSNavigator/ui/controller.py:296
+msgid "Could not reopen the previous channel; select it manually."
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:28
+msgid "Türksat 42°E · Local scan · Preview and apply"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:29
+msgid "Check the settings, then press Green to scan."
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:31
+msgid ""
+"The service database is left untouched. The new list is written to a "
+"separate bouquet."
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:34 TKGSNavigator/ui/screen.py:102
+msgid "Close"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:35
+msgid "Scan"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:36
+msgid "Apply"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:37
+msgid "Undo"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:83
+msgid "Cancel"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:90
 #, python-format
 msgid ""
 "%(count)s / %(expected)s sections · %(elapsed).1f s · %(duplicates)d "
 "duplicates skipped"
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:310
-msgid "No TKGS data on this transponder."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:320
+#: TKGSNavigator/ui/screen.py:105
 msgid "Scan cancelled; the channel list was not changed."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:329
-msgid "no match"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:336
-#, python-format
-msgid "%(channels)d channels · %(matched)d matched · %(skipped)d skipped"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:346
-msgid "Preview ready. Press Yellow to apply the list."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:350
-msgid "The table could not be validated."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:357
-msgid "The channel list was updated."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:359
-msgid "The previous list was restored."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:362
+#: TKGSNavigator/ui/screen.py:110
 msgid "Files were written; restart the Enigma2 GUI to see the list."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:364
-#, python-format
-msgid "Operation failed (code %s)."
+#: TKGSNavigator/ui/screen.py:112
+msgid "The channel list was updated."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:370
+#: TKGSNavigator/ui/screen.py:114
+msgid "The previous list was restored."
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:126
+msgid "no match"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:134
+#, python-format
+msgid ""
+"%(channels)d channels · %(matched)d matched · %(skipped)d skipped · "
+"%(bouquets)d bouquets"
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:146
+msgid "Preview ready. Press Yellow to apply the list."
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:149
+msgid "The table could not be validated."
+msgstr ""
+
+#: TKGSNavigator/ui/screen.py:179
 msgid "Run a successful scan first."
 msgstr ""
 
-#: TKGSNavigator/ui/screen.py:380
+#: TKGSNavigator/ui/screen.py:183
 msgid "No TKGS Navigator backup to undo."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:388
-msgid "Waiting for the file operation to finish…"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:390
-msgid "Scan cancelled."
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:393
-msgid "Stopping the scan…"
-msgstr ""
-
-#: TKGSNavigator/ui/screen.py:407
-msgid "Could not reopen the previous channel; select it manually."
 msgstr ""
