@@ -60,7 +60,8 @@ def build(output, libdir="usr/lib", epoch=0):
     output.mkdir(parents=True, exist_ok=True)
     install = libdir + "/enigma2/python/Plugins/Extensions/%s/" % MODULE
     files = {install + str(path.relative_to(ROOT / MODULE)): path.read_bytes()
-             for path in (ROOT / MODULE).rglob("*.py")}
+             for pattern in ("*.py", "locale/*/LC_MESSAGES/*.mo") for path in (ROOT / MODULE).glob("**/" + pattern)
+             if "__pycache__" not in path.parts}
     files[install + "README.md"] = (ROOT / "README.md").read_bytes()
     files[install + "NOTICE.md"] = (ROOT / "NOTICE.md").read_bytes()
     files[install + "LICENSE"] = (ROOT / "LICENSE").read_bytes()

@@ -19,6 +19,7 @@ from ..core.constants import TKGS_TRANSPONDERS, TuningTarget
 from ..core.lamedb import ServiceDatabase
 from ..core.storage import BACKUP_DIR
 from .config import settings
+from .i18n import _
 from .signals import bind_signal, unbind_signal
 from .skin import make_skin
 
@@ -27,9 +28,6 @@ LAMEDB = CONFIG_DIR / "lamedb"
 OUTPUT_LIMIT = 2 * 1024 * 1024
 LOCK_DEADLINE = 12
 IDLE_TIMEOUT = 20
-LAUNCH_STATUS = {"scan": "Fetching the TKGS table…",
-                 "apply": "Backing up and writing the list…",
-                 "restore": "Restoring the previous list…"}
 
 
 class NavigatorScreen(Screen):
@@ -37,16 +35,16 @@ class NavigatorScreen(Screen):
         self.skin = make_skin()
         Screen.__init__(self, session)
         self.cfg = settings()
-        entries = [("Frequency (MHz)", self.cfg.frequency), ("Polarization", self.cfg.polarization),
-                   ("Symbol rate (kSym/s)", self.cfg.symbol_rate), ("Max scan (s)", self.cfg.timeout),
-                   ("DVB adapter", self.cfg.adapter), ("Demux number", self.cfg.demux)]
+        entries = [(_("Frequency (MHz)"), self.cfg.frequency), (_("Polarization"), self.cfg.polarization),
+                   (_("Symbol rate (kSym/s)"), self.cfg.symbol_rate), (_("Max scan (s)"), self.cfg.timeout),
+                   (_("DVB adapter"), self.cfg.adapter), (_("Demux number"), self.cfg.demux)]
         self["config"] = ConfigList([getConfigListEntry(label, value) for label, value in entries])
         for name, text in {"title": "TKGS NAVIGATOR",
-                           "subtitle": "Türksat 42°E · Local scan · Preview and apply",
-                           "status": "Check the settings, then press Green to scan.",
-                           "metrics": "The service database is left untouched. "
-                                      "The new list is written to a separate bouquet.",
-                           "red": "Close", "green": "Scan", "yellow": "Apply", "blue": "Undo"}.items():
+                           "subtitle": _("Türksat 42°E · Local scan · Preview and apply"),
+                           "status": _("Check the settings, then press Green to scan."),
+                           "metrics": _("The service database is left untouched. "
+                                        "The new list is written to a separate bouquet."),
+                           "red": _("Close"), "green": _("Scan"), "yellow": _("Apply"), "blue": _("Undo")}.items():
             self[name] = Label(text)
         self["channels"] = MenuList([])
         self["progress"] = ProgressBar()
@@ -110,15 +108,15 @@ class NavigatorScreen(Screen):
             return
         try:
             if self.session.nav.getRecordings():
-                raise ValueError("Cannot scan while a recording is in progress.")
+                raise ValueError(_("Cannot scan while a recording is in progress."))
             database = ServiceDatabase.load(LAMEDB)
             self.candidates = database.tuning_candidates(self._targets())
             if not self.candidates:
-                raise ValueError("No TKGS transponder is in the service database. "
-                                 "Run the receiver's network scan first.")
+                raise ValueError(_("No TKGS transponder is in the service database. "
+                                   "Run the receiver's network scan first."))
             self.device = "/dev/dvb/adapter%d/demux%d" % (self.cfg.adapter.value, self.cfg.demux.value)
             if not Path(self.device).exists():
-                raise ValueError("Selected DVB device not found: " + self.device)
+                raise ValueError(_("Selected DVB device not found: ") + self.device)
             for entry in self["config"].list:
                 entry[1].save()
             configfile.save()
@@ -143,11 +141,12 @@ class NavigatorScreen(Screen):
         self.state = "tuning"
         self.deadline = time.monotonic() + LOCK_DEADLINE
         self.status((reason + " " if reason else "") +
-                    "Tuning to %d %s %d; waiting for tuner lock…" % target)
+                    _("Tuning to %(frequency)d %(polarization)s %(symbol_rate)d; waiting for tuner lock…")
+                    % target._asdict())
         if self.session.nav.playService(eServiceReference(service.reference)):
-            raise ValueError("Could not play the TKGS service")
+            raise ValueError(_("Could not play the TKGS service"))
         self.timer.start(200, False)
-        self["red"].setText("Cancel")
+        self["red"].setText(_("Cancel"))
 
     def _try_next(self, reason):
         """Tune the next candidate transponder; return False when none is left."""
@@ -163,7 +162,7 @@ class NavigatorScreen(Screen):
         self.timer.stop()
         self.state = "idle"
         self.restore_playback()
-        self["red"].setText("Close")
+        self["red"].setText(_("Close"))
         self.status(message)
 
     def check_lock(self):
@@ -186,14 +185,15 @@ class NavigatorScreen(Screen):
                                  "--lamedb", str(LAMEDB), "--save-capture", str(self.capture_path)])
         elif time.monotonic() >= self.deadline:
             self.timer.stop()
-            if not self._try_next("Tuner did not lock."):
-                self._fail("Tuner did not lock. Check the frequency and satellite settings.")
+            if not self._try_next(_("Tuner did not lock.")):
+                self._fail(_("Tuner did not lock. Check the frequency and satellite settings."))
 
     def launch(self, state, arguments):
         self.state, self.buffer, self.pending = state, "", None
         worker = Path(__file__).resolve().parents[1] / "worker.py"
         command = " ".join(shlex.quote(arg) for arg in ["python3", "-u", str(worker)] + arguments)
-        self.status(LAUNCH_STATUS[state])
+        self.status({"scan": _("Fetching the TKGS table…"), "apply": _("Backing up and writing the list…"),
+                     "restore": _("Restoring the previous list…")}[state])
         try:
             code = self.container.execute(command)
         except Exception as error:
@@ -208,7 +208,7 @@ class NavigatorScreen(Screen):
         self.buffer += data.decode("ascii", "replace") if isinstance(data, bytes) else data
         if len(self.buffer) > OUTPUT_LIMIT:
             self.buffer = ""
-            self.status("Process output exceeded the limit.")
+            self.status(_("Process output exceeded the limit."))
             if self.state == "scan":
                 self.cancel()
             return
@@ -223,8 +223,10 @@ class NavigatorScreen(Screen):
             if event.get("event") == "progress":
                 count, expected = event["sections"], event["expected"]
                 self["progress"].setValue(min(99, int(100 * count / expected)) if expected else 0)
-                self["metrics"].setText("%s / %s sections · %.1f s · %d duplicates skipped" % (
-                    count, expected or "?", event["elapsed"], event["duplicates"]))
+                self["metrics"].setText(
+                    _("%(count)s / %(expected)s sections · %(elapsed).1f s · %(duplicates)d duplicates skipped")
+                    % {"count": count, "expected": expected or "?", "elapsed": event["elapsed"],
+                       "duplicates": event["duplicates"]})
             else:
                 self.pending = event
 
@@ -234,46 +236,47 @@ class NavigatorScreen(Screen):
         operation = self.state
         event = self.pending or {}
         if (operation == "scan" and not self.cancel_requested and event.get("event") == "result"
-                and event.get("sections") == 0 and self._try_next("No TKGS data on this transponder.")):
+                and event.get("sections") == 0 and self._try_next(_("No TKGS data on this transponder."))):
             return
         self.state = "idle"
-        self["red"].setText("Close")
+        self["red"].setText(_("Close"))
         if operation == "scan":
             self.restore_playback()
         if self.cancel_requested:
             self.cancel_requested = False
             self.report = None
-            self.status("Scan cancelled; the channel list was not changed.")
+            self.status(_("Scan cancelled; the channel list was not changed."))
         elif event.get("event") == "result" and code in (0, 2):
             self.report = event
             matched = {item["lcn"] for item in event["matched"]}
-            rows = ["%4d  %s%s" % (item["lcn"], item["name"], "" if item["lcn"] in matched else "  [no match]")
+            rows = ["%4d  %s%s" % (item["lcn"], item["name"], "" if item["lcn"] in matched else "  [%s]" % _("no match"))
                     for item in event["channels"]]
             self["channels"].setList(rows)
             self["progress"].setValue(100 if event["complete"] else 0)
-            self["metrics"].setText("%d channels · %d matched · %d skipped" % (
-                len(event["channels"]), len(event["matched"]), len(event["skipped"])))
+            self["metrics"].setText(_("%(channels)d channels · %(matched)d matched · %(skipped)d skipped") % {
+                "channels": len(event["channels"]), "matched": len(event["matched"]),
+                "skipped": len(event["skipped"])})
             if event["can_apply"]:
-                self.status(" ".join(event["warnings"] + ["Preview ready. Press Yellow to apply the list."]))
+                self.status(" ".join(event["warnings"] + [_("Preview ready. Press Yellow to apply the list.")]))
             else:
-                self.status(" ".join(event["warnings"]) or "The table could not be validated.")
+                self.status(" ".join(event["warnings"]) or _("The table could not be validated."))
         elif code == 0 and event.get("event") in ("applied", "restored"):
             self.last_backup = event.get("backup") or self.last_backup
             self.report = None
             try:
                 eDVBDB.getInstance().reloadBouquets()
-                self.status("The channel list was updated." if operation == "apply" else
-                            "The previous list was restored.")
+                self.status(_("The channel list was updated.") if operation == "apply" else
+                            _("The previous list was restored."))
             except Exception:
-                self.status("Files were written; restart the Enigma2 GUI to see the list.")
+                self.status(_("Files were written; restart the Enigma2 GUI to see the list."))
         else:
-            self.status(event.get("message", "Operation failed (code %s)." % code))
+            self.status(event.get("message", _("Operation failed (code %s).") % code))
 
     def apply(self):
         if self.state != "idle":
             return
         if not self.report or not self.report.get("can_apply"):
-            self.status("Run a successful scan first.")
+            self.status(_("Run a successful scan first."))
             return
         self.launch("apply", ["apply", "--capture", str(self.capture_path), "--config-dir", str(CONFIG_DIR)])
 
@@ -281,18 +284,18 @@ class NavigatorScreen(Screen):
         if self.state != "idle":
             return
         if not self.last_backup:
-            self.status("No TKGS Navigator backup to undo.")
+            self.status(_("No TKGS Navigator backup to undo."))
             return
         self.launch("restore", ["restore", "--config-dir", str(CONFIG_DIR), "--backup", self.last_backup])
 
     def cancel(self):
         if self.state in ("apply", "restore"):
-            self.status("Waiting for the file operation to finish…")
+            self.status(_("Waiting for the file operation to finish…"))
         elif self.state == "tuning":
-            self._fail("Scan cancelled.")
+            self._fail(_("Scan cancelled."))
         elif self.state == "scan":
             self.cancel_requested = True
-            self.status("Stopping the scan…")
+            self.status(_("Stopping the scan…"))
             self.container.kill()
         else:
             self.close()
@@ -306,7 +309,7 @@ class NavigatorScreen(Screen):
                 else:
                     self.session.nav.stopService()
             except Exception:
-                self.status("Could not reopen the previous channel; select it manually.")
+                self.status(_("Could not reopen the previous channel; select it manually."))
 
     def cleanup(self):
         self.closed = True

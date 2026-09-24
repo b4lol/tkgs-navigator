@@ -1,3 +1,4 @@
+import ast
 import importlib
 import json
 from pathlib import Path
@@ -139,6 +140,42 @@ class CliTests(unittest.TestCase):
                                      "--config-dir", str(folder)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((folder / BOUQUET).exists())
+
+
+class TranslationTests(unittest.TestCase):
+    def test_plugin_catalog_first_then_enigma2_catalog(self):
+        from TKGSNavigator.ui import i18n
+        with patch.object(i18n.gettext, "dgettext", return_value="Kapat") as plugin, \
+             patch.object(i18n.gettext, "gettext", return_value="unused"):
+            self.assertEqual(i18n._("Close"), "Kapat")
+            plugin.assert_called_once_with(i18n.DOMAIN, "Close")
+        with patch.object(i18n.gettext, "dgettext", side_effect=lambda domain, text: text), \
+             patch.object(i18n.gettext, "gettext", return_value="Schließen"):
+            self.assertEqual(i18n._("Close"), "Schließen")
+
+    def test_template_lists_every_ui_message(self):
+        root = Path(__file__).resolve().parents[1] / "TKGSNavigator"
+        messages = set()
+        for path in [root / "plugin.py"] + sorted((root / "ui").glob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_" and node.args:
+                    messages.add(node.args[0].value)
+        self.assertTrue(messages)
+        self.assertEqual(messages - template_messages(root / "locale" / "TKGSNavigator.pot"), set())
+
+
+def template_messages(path):
+    messages, current = set(), None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("msgid "):
+            current = [ast.literal_eval(line[6:])]
+        elif line.startswith('"') and current is not None:
+            current.append(ast.literal_eval(line))
+        else:
+            if current is not None and line.startswith("msgstr"):
+                messages.add("".join(current))
+            current = None
+    return messages - {""}
 
 
 class Widget:

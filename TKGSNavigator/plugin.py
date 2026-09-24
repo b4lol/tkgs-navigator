@@ -1,8 +1,10 @@
 """Enigma2 entry point; core modules remain usable without Enigma2."""
 from Plugins.Plugin import PluginDescriptor
 
+from .ui.i18n import _
+
 NAME = "TKGS Navigator"
-DESCRIPTION = "Local TKGS scan and channel ordering"
+DESCRIPTION = _("Local TKGS scan and channel ordering")
 
 
 def open_plugin(session, **kwargs):
