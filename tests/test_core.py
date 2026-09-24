@@ -240,6 +240,22 @@ class WorkflowTests(unittest.TestCase):
         report = preview(collector, ServiceDatabase.parse(LAMEDB4))
         self.assertFalse(report["can_apply"])
 
+    def test_crc_disabled_capture_survives_preview_and_reload(self):
+        samples = [bytearray(raw) for raw in sample_sections()]
+        samples[1][-1] ^= 1
+        collector = TableCollector(check_crc=False)
+        for raw in samples:
+            collector.add(bytes(raw))
+        report = preview(collector, ServiceDatabase.parse(LAMEDB4))
+        self.assertTrue(report["can_apply"])
+        self.assertFalse(report["crc_checked"])
+        self.assertTrue(any("CRC" in warning for warning in report["warnings"]))
+        with tempfile.TemporaryDirectory() as tmp:
+            save_capture(Path(tmp) / "capture.json", collector)
+            loaded = load_capture(Path(tmp) / "capture.json")
+            self.assertTrue(loaded.complete)
+            self.assertFalse(loaded.check_crc)
+
     def test_roundtrip_capture_and_apply(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

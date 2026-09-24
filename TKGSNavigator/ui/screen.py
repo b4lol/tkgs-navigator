@@ -221,8 +221,10 @@ class NavigatorScreen(Screen):
             self["progress"].setValue(100 if event["complete"] else 0)
             self["metrics"].setText("%d channels · %d matched · %d skipped" % (
                 len(event["channels"]), len(event["matched"]), len(event["skipped"])))
-            self.status("Preview ready. Press Yellow to apply the list." if event["can_apply"] else
-                        " ".join(event["warnings"]) or "The table could not be validated.")
+            if event["can_apply"]:
+                self.status(" ".join(event["warnings"] + ["Preview ready. Press Yellow to apply the list."]))
+            else:
+                self.status(" ".join(event["warnings"]) or "The table could not be validated.")
         elif code == 0 and event.get("event") in ("applied", "restored"):
             self.last_backup = event.get("backup") or self.last_backup
             self.report = None

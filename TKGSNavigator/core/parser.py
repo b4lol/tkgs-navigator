@@ -67,10 +67,10 @@ def _read_positions(payload, positions):
         positions.setdefault(lcn, set()).add(sid)
 
 
-def parse_channels(sections):
+def parse_channels(sections, check_crc=True):
     names, positions = {}, {}
     for raw in sections:
-        payload = Section.parse(raw).payload
+        payload = Section.parse(raw, check_crc).payload
         _read_names(payload, names)
         _read_positions(payload, positions)
     channels, warnings, seen_sids = [], [], set()

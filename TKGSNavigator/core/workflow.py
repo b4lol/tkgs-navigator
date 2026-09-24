@@ -24,7 +24,10 @@ def load_capture(path):
         raise ValueError("Unsupported capture format")
     if len(document["sections"]) > MAX_CAPTURE_SECTIONS:
         raise ValueError("Capture has too many sections")
-    collector = TableCollector()
+    check_crc = document.get("crc", True)
+    if not isinstance(check_crc, bool):
+        raise ValueError("Unsupported capture format")
+    collector = TableCollector(check_crc)
     for encoded in document["sections"]:
         if not isinstance(encoded, str) or len(encoded) > MAX_SECTION_BASE64:
             raise ValueError("Invalid section record")
@@ -33,20 +36,24 @@ def load_capture(path):
 
 
 def save_capture(path, collector):
-    document = {"schema": 1, "sections": [base64.b64encode(raw).decode("ascii") for raw in collector.ordered()]}
+    document = {"schema": 1, "crc": collector.check_crc,
+                "sections": [base64.b64encode(raw).decode("ascii") for raw in collector.ordered()]}
     atomic_write(Path(path), json.dumps(document, indent=2).encode("utf-8"))
 
 
 def analyze(collector, database, orbital=DEFAULT_ORBITAL):
     """Parse and match once, returning both the JSON report and the matched pairs."""
-    result = parse_channels(collector.ordered())
+    result = parse_channels(collector.ordered(), collector.check_crc)
     matched, skipped = database.match(result.channels, orbital)
     warnings = list(result.warnings)
     if not collector.complete:
         warnings.append("TKGS table is incomplete; applying is disabled.")
     if not matched:
         warnings.append("No channels matched the receiver's TV services.")
+    if not collector.check_crc:
+        warnings.append("Captured with the CRC check disabled; review the names before applying.")
     report = {"schema": 1, "complete": collector.complete, "version": collector.version,
+              "crc_checked": collector.check_crc,
               "sections": len(collector.parts), "missing_sections": collector.missing,
               "rejected_sections": collector.rejected, "duplicates": collector.duplicates,
               "channels": [asdict(channel) for channel in result.channels],
