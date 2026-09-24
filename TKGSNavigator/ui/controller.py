@@ -15,6 +15,7 @@ import time
 
 from enigma import eConsoleAppContainer, eDVBDB, eServiceReference, eTimer
 
+from ..core.discovery import format_target
 from ..core.storage import BACKUP_DIR
 from .i18n import _
 from .signals import bind_signal, unbind_signal
@@ -22,7 +23,9 @@ from .signals import bind_signal, unbind_signal
 CONFIG_DIR = Path("/etc/enigma2")
 OUTPUT_LIMIT = 2 * 1024 * 1024
 LOCK_DEADLINE = 12
-IDLE_TIMEOUT = 20
+SCAN_TIMEOUT = 120  # Upper bound; a scan ends as soon as the table is complete.
+IDLE_TIMEOUT = 20  # Published TKGS transponders.
+DEEP_IDLE_TIMEOUT = 8  # Other transponders tried by deep search.
 WORKER = Path(__file__).resolve().parents[1] / "worker.py"
 
 
@@ -83,13 +86,13 @@ class ScanController:
     def busy(self):
         return self.state != "idle"
 
-    def start(self, candidates, timeout, resolve_device, options=()):
-        """Tune candidates[0]; resolve_device() is asked for the demux once the tuner locks."""
+    def start(self, candidates, resolve_devices, options=(), timeout=SCAN_TIMEOUT):
+        """Tune candidates[0]; resolve_devices() gives the demuxes to listen on after lock."""
         if self.busy:
             return
         self.candidates = list(candidates)
         self.timeout = timeout
-        self.resolve_device = resolve_device
+        self.resolve_devices = resolve_devices
         self.options = list(options)
         self.report = None
         self.original = self.session.nav.getCurrentlyPlayingServiceReference()
@@ -101,17 +104,25 @@ class ScanController:
             self._fail(str(error))
 
     def _tune(self, index, reason=""):
-        target, service = self.candidates[index]
+        candidate = self.candidates[index]
         self.candidate = index
-        self.target_reference = service.reference
+        self.target_reference = candidate.service.reference
         self.state = "tuning"
         self.deadline = time.monotonic() + LOCK_DEADLINE
+        values = dict(candidate.target._asdict(), index=index + 1, total=len(self.candidates))
+        if candidate.deep:
+            message = _(
+                "Searching for the TKGS table (%(index)d/%(total)d): "
+                "%(frequency)d %(polarization)s %(symbol_rate)d…"
+            )
+        else:
+            message = _(
+                "Tuning to %(frequency)d %(polarization)s %(symbol_rate)d; waiting for tuner lock…"
+            )
         self.listener.status(
-            (reason + " " if reason else "")
-            + _("Tuning to %(frequency)d %(polarization)s %(symbol_rate)d; waiting for tuner lock…")
-            % target._asdict()
+            ("" if candidate.deep or not reason else reason + " ") + message % values
         )
-        if self.session.nav.playService(eServiceReference(service.reference)):
+        if self.session.nav.playService(eServiceReference(candidate.service.reference)):
             raise ValueError(_("Could not play the TKGS service"))
         self.timer.start(200, False)
 
@@ -151,14 +162,18 @@ class ScanController:
         if locked:
             self.timer.stop()
             try:
-                device = self.resolve_device()
+                devices = self.resolve_devices()
             except Exception as error:
                 self._fail(str(error))
                 return
+            idle = DEEP_IDLE_TIMEOUT if self.candidates[self.candidate].deep else IDLE_TIMEOUT
+            arguments = ["scan", "--timeout", str(self.timeout)]
+            for device in devices:
+                arguments += ["--device", device]
             self.launch(
                 "scan",
-                ["scan", "--device", device, "--timeout", str(self.timeout)]
-                + ["--idle-timeout", str(min(IDLE_TIMEOUT, self.timeout))]
+                arguments
+                + ["--idle-timeout", str(min(idle, self.timeout))]
                 + ["--lamedb", str(self.lamedb), "--save-capture", str(self.capture_path)]
                 + self.options,
             )
@@ -228,7 +243,14 @@ class ScanController:
             self.cancel_requested = False
             self.report = None
             event = {"event": "cancelled"}
+        elif event.get("event") == "result" and code in (0, 2) and not event.get("sections"):
+            event = {
+                "event": "error",
+                "message": _("No TKGS table was found on %(count)d transponders.")
+                % {"count": len(self.candidates)},
+            }
         elif event.get("event") == "result" and code in (0, 2):
+            event = dict(event, transponder=format_target(self.candidates[self.candidate].target))
             self.report = event
         elif code == 0 and event.get("event") in ("applied", "restored"):
             self.last_backup = event.get("backup") or self.last_backup

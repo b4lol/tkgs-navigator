@@ -1,4 +1,5 @@
-"""Receiver UI: settings, preview and explicit apply on top of the scan controller."""
+"""Receiver UI. With automatic updates on (the default) opening it is enough: it finds the
+table, fills missing channels with the receiver's own search, and applies a clean result."""
 
 from Components.ActionMap import NumberActionMap
 from Components.config import KEY_0, KEY_LEFT, KEY_RIGHT, configfile, getConfigListEntry
@@ -9,10 +10,20 @@ from Components.ProgressBar import ProgressBar
 from Screens.Screen import Screen
 
 from . import controller as scan
-from .checks import NoTransponder, offer_channel_search, scan_candidates
-from .config import device_resolver, plan_arguments, setting_entries, settings
+from .checks import NoTransponder, offer_channel_search, run_channel_search, scan_candidates
+from .config import demux_resolver, plan_arguments, remember, setting_entries, settings
 from .i18n import _
 from .skin import make_skin
+
+# Share of listed channels missing from lamedb above which the receiver's channel search
+# is run once before the list is applied.
+MISSING_SEARCH_RATIO = 0.3
+
+
+def missing_ratio(event):
+    channels = len(event.get("channels", []))
+    missing = sum(1 for item in event.get("skipped", []) if item.get("reason") == "missing")
+    return missing / channels if channels else 0.0
 
 
 class NavigatorScreen(Screen):
@@ -25,14 +36,14 @@ class NavigatorScreen(Screen):
         )
         for name, text in {
             "title": "TKGS NAVIGATOR",
-            "subtitle": _("Türksat 42°E · Local scan · Preview and apply"),
-            "status": _("Check the settings, then press Green to scan."),
+            "subtitle": _("Türksat 42°E · Automatic TKGS channel list"),
+            "status": _("Press Green to update the channel list."),
             "metrics": _(
                 "The service database is left untouched. "
-                "The new list is written to a separate bouquet."
+                "The new list is written to separate bouquets."
             ),
             "red": _("Close"),
-            "green": _("Scan"),
+            "green": _("Update now"),
             "yellow": _("Apply"),
             "blue": _("Undo"),
         }.items():
@@ -60,11 +71,19 @@ class NavigatorScreen(Screen):
             ["SetupActions", "ColorActions", "NumberActions", "DirectionActions"], actions, -1
         )
         self.controller = scan.ScanController(session, self, scan.CONFIG_DIR)
+        self.searched = False  # The receiver's channel search runs at most once per visit.
         self.onClose.append(self.controller.close)
+        self.onFirstExecBegin.append(self.opened)
+
+    def opened(self):
+        if self.cfg.automatic.value:
+            self.start_scan()
 
     def edit(self, key):
         if not self.controller.busy:
             self["config"].handleKey(key)
+            self["config"].list[0][1].save()
+            configfile.save()
 
     def number(self, value):
         self.edit(KEY_0 + value)
@@ -104,7 +123,12 @@ class NavigatorScreen(Screen):
         if kind == "cancelled":
             self.status(_("Scan cancelled; the channel list was not changed."))
         elif kind == "result":
+            remember(self.cfg, event)
             self.show_result(event)
+            if not self.searched and missing_ratio(event) > MISSING_SEARCH_RATIO:
+                self.search_channels(_("Many listed channels are not in the service database."))
+            elif self.cfg.automatic.value and event["can_apply"] and not event["warnings"]:
+                self.controller.apply()
         elif kind in ("applied", "restored"):
             if event.get("reload_failed"):
                 self.status(_("Files were written; restart the Enigma2 GUI to see the list."))
@@ -148,7 +172,21 @@ class NavigatorScreen(Screen):
         else:
             self.status(" ".join(event["warnings"]) or _("The table could not be validated."))
 
-    # Keys ------------------------------------------------------------------------------
+    # Actions ---------------------------------------------------------------------------
+
+    def search_channels(self, reason):
+        """Fill lamedb with the receiver's own channel search, then scan again.
+
+        In automatic mode the search starts by itself; otherwise, or when the image lacks
+        the scanner API, the user is asked first.
+        """
+        self.searched = True
+        self.status(reason)
+        if self.cfg.automatic.value:
+            self.status(reason + " " + _("Searching for channels…"))
+            if run_channel_search(self.session, self.start_scan):
+                return
+        offer_channel_search(self.session, reason)
 
     def start_scan(self):
         if self.controller.busy:
@@ -156,22 +194,18 @@ class NavigatorScreen(Screen):
         try:
             candidates = scan_candidates(self.session, self.controller.lamedb, self.cfg)
         except NoTransponder as error:
-            self.status(str(error))
-            offer_channel_search(self.session, str(error))
+            if self.searched:
+                self.status(str(error))
+            else:
+                self.search_channels(str(error))
             return
         except Exception as error:
             self.status(str(error))
             return
-        for entry in self["config"].list:
-            entry[1].save()
-        configfile.save()
         self["channels"].setList([])
         self["progress"].setValue(0)
         self.controller.start(
-            candidates,
-            self.cfg.timeout.value,
-            device_resolver(self.cfg, self.session, scan.playing_demux),
-            plan_arguments(self.cfg),
+            candidates, demux_resolver(self.session, scan.playing_demux), plan_arguments()
         )
 
     def apply(self):

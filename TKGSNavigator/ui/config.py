@@ -1,107 +1,92 @@
-"""Persistent plugin settings, created lazily on first use, and what they translate to."""
+"""The one user setting, what the plugin remembers, and what it detects instead of asking."""
 
-from pathlib import Path
+import glob
+import re
 
 from Components.config import (
     ConfigInteger,
-    ConfigSelection,
     ConfigSubsection,
+    ConfigText,
     ConfigYesNo,
     config,
+    configfile,
 )
 
-from ..core.constants import TKGS_TRANSPONDERS, TuningTarget
 from .i18n import _
 
-DEFAULTS = {
-    "frequency": TKGS_TRANSPONDERS[0].frequency,
-    "polarization": TKGS_TRANSPONDERS[0].polarization,
-    "symbol_rate": TKGS_TRANSPONDERS[0].symbol_rate,
-    "timeout": 60,
-    "adapter": 0,
-    "demux": 0,
-    "auto_hour": 5,
-}
 MAX_TIMESTAMP = 2**31 - 1
+DEMUX_PATTERN = "/dev/dvb/adapter*/demux*"
 
 
 def settings():
     if not hasattr(config.plugins, "tkgs_navigator"):
         group = ConfigSubsection()
-        group.frequency = ConfigInteger(default=DEFAULTS["frequency"], limits=(3000, 14000))
-        group.polarization = ConfigSelection(
-            default=DEFAULTS["polarization"], choices=[("V", _("Vertical")), ("H", _("Horizontal"))]
-        )
-        group.symbol_rate = ConfigInteger(default=DEFAULTS["symbol_rate"], limits=(1000, 45000))
-        group.timeout = ConfigInteger(default=DEFAULTS["timeout"], limits=(10, 180))
-        group.demux_mode = ConfigSelection(
-            default="auto", choices=[("auto", _("Automatic")), ("manual", _("Manual"))]
-        )
-        group.adapter = ConfigInteger(default=DEFAULTS["adapter"], limits=(0, 15))
-        group.demux = ConfigInteger(default=DEFAULTS["demux"], limits=(0, 31))
-        group.prefer = ConfigSelection(default="hd", choices=[("hd", "HD"), ("sd", "SD")])
-        group.categories = ConfigYesNo(default=False)
-        group.align_lcn = ConfigYesNo(default=False)
-        group.bouquet_first = ConfigYesNo(default=False)
-        group.auto_update = ConfigYesNo(default=False)
-        group.auto_hour = ConfigInteger(default=DEFAULTS["auto_hour"], limits=(0, 23))
-        group.auto_apply = ConfigYesNo(default=False)
+        # Scan on open, apply clean results, and update daily in standby.
+        group.automatic = ConfigYesNo(default=True)
+        # "MHz:polarization:kSym/s" of the transponder where the table was last found.
+        group.learned = ConfigText(default="")
         group.last_auto_update = ConfigInteger(default=0, limits=(0, MAX_TIMESTAMP))
         config.plugins.tkgs_navigator = group
     return config.plugins.tkgs_navigator
 
 
+def remember(cfg, event):
+    """Store where a complete table was found so the next scan starts there."""
+    if event.get("complete") and event.get("transponder"):
+        cfg.learned.value = event["transponder"]
+        cfg.learned.save()
+        configfile.save()
+
+
 def setting_entries(cfg):
-    """(label, setting) rows for the settings list, in display order."""
-    return [
-        (_("Frequency (MHz)"), cfg.frequency),
-        (_("Polarization"), cfg.polarization),
-        (_("Symbol rate (kSym/s)"), cfg.symbol_rate),
-        (_("Max scan (s)"), cfg.timeout),
-        (_("Demux selection"), cfg.demux_mode),
-        (_("DVB adapter"), cfg.adapter),
-        (_("Demux number"), cfg.demux),
-        (_("Main list"), cfg.prefer),
-        (_("Category bouquets"), cfg.categories),
-        (_("Channel number = LCN"), cfg.align_lcn),
-        (_("Bouquet at the top"), cfg.bouquet_first),
-        (_("Daily automatic update"), cfg.auto_update),
-        (_("Update hour"), cfg.auto_hour),
-        (_("Apply updates automatically"), cfg.auto_apply),
-    ]
+    """(label, setting) rows for the settings list."""
+    return [(_("Automatic updates"), cfg.automatic)]
 
 
-def targets(cfg):
-    """The configured transponder first, then the known TKGS transponders."""
-    configured = TuningTarget(cfg.frequency.value, cfg.polarization.value, cfg.symbol_rate.value)
-    return (configured,) + TKGS_TRANSPONDERS
+def numbering_per_bouquet():
+    """True when the image numbers every bouquet from 1 (alternative numbering mode)."""
+    try:
+        return bool(config.usage.alternative_number_mode.value)
+    except Exception:
+        return False
 
 
-def plan_arguments(cfg):
-    """Worker options for the bouquet plan."""
-    arguments = ["--prefer", cfg.prefer.value]
-    for flag, setting in (
-        ("--categories", cfg.categories),
-        ("--align-lcn", cfg.align_lcn),
-        ("--bouquet-first", cfg.bouquet_first),
-    ):
-        if setting.value:
-            arguments.append(flag)
+def plan_arguments():
+    """Worker options for the bouquet plan, chosen for the receiver.
+
+    HD variants first; category, radio and HD/SD lists whenever the table carries the
+    data; channel numbers equal to LCNs. Unless the image numbers each bouquet from 1,
+    the bouquet is linked at the top so that its numbering starts at 1.
+    """
+    arguments = ["--prefer", "hd", "--categories", "--align-lcn"]
+    if not numbering_per_bouquet():
+        arguments.append("--bouquet-first")
     return arguments
 
 
-def device_resolver(cfg, session, detect):
-    """Return a callable giving the demux path once the tuner has locked.
+def _demux_order(path):
+    return tuple(int(number) for number in re.findall(r"\d+", path))
 
-    In automatic mode the demux of the playing TKGS service is used when the image exposes
-    it; otherwise, and in manual mode, the configured adapter and demux.
+
+def list_demuxes():
+    return sorted(glob.glob(DEMUX_PATTERN), key=_demux_order)
+
+
+def demux_resolver(session, detect):
+    """Return a callable giving the demux devices to listen on once the tuner has locked.
+
+    The demux of the playing TKGS service comes first when the image reports it; every
+    other demux follows, and the capture keeps whichever one delivers the table.
     """
 
     def resolve():
-        device = detect(session, cfg.adapter.value) if cfg.demux_mode.value == "auto" else None
-        device = device or "/dev/dvb/adapter%d/demux%d" % (cfg.adapter.value, cfg.demux.value)
-        if not Path(device).exists():
-            raise ValueError(_("Selected DVB device not found: ") + device)
-        return device
+        devices = list_demuxes()
+        detected = detect(session)
+        if detected in devices:
+            devices.remove(detected)
+            devices.insert(0, detected)
+        if not devices:
+            raise ValueError(_("No DVB demux device was found."))
+        return devices
 
     return resolve
