@@ -5,9 +5,11 @@ Enigma2 screen → tuner lock → worker (separate process)
                               ↓
 demux → section framing → CRC + table collection → local parsing
                                                     ↓
-lamedb 4/5 → SID + satellite matching → JSON preview → screen
-                                                    ↓ Yellow key
-captured raw record → re-validation → backup → bouquet + index
+layout choice (observed | fixed records, if proven) → lamedb 4/5 matching
+                                                    ↓
+bouquet plan (main, HD/SD, categories, radio) → JSON preview → screen
+                                                    ↓ Yellow key (or opt-in auto)
+captured raw record → re-validation → backup → bouquet set + indexes
 ```
 
 ## Modules
@@ -18,17 +20,23 @@ captured raw record → re-validation → backup → bouquet + index
 | `core/crc.py` | MPEG-2 CRC-32 (poly 0x04C11DB7), precomputed table |
 | `core/sections.py` | Section framing, version and duplicate handling |
 | `core/text.py` | Channel-name codec detection and control-character cleaning |
-| `core/parser.py` | Observed TKGS service-name / LCN relationships |
-| `core/lamedb.py` | Read-only lamedb, numeric frequency and satellite checks, tuning candidates |
-| `core/dvb.py` | Architecture-aware ioctl codes (incl. MIPS/PPC/SPARC/PA-RISC/Alpha), `struct`-packed filter, nonblocking demux, timeout/idle/cancel, CRC fallback |
-| `core/workflow.py` | Shared live/offline flow, bounded capture file, single-pass analysis |
-| `core/storage.py` | Lock, backup, atomic file write, rollback |
-| `worker.py` | JSON-lines CLI, error and cancel exit codes |
-| `ui/config.py` | Persistent plugin settings |
+| `core/parser.py` | Observed TKGS service-name / LCN relationships; `Channel` |
+| `core/records.py` | Research report's fixed-record layout, strictly validated |
+| `core/lamedb.py` | Read-only lamedb, satellite checks, tuning candidates, full-key matching, key hit rate |
+| `core/dvb.py` | Architecture-aware ioctl codes (incl. MIPS/PPC/SPARC/PA-RISC/Alpha), `struct`-packed filter, nonblocking demux, timeout/idle/cancel, CRC fallback, raw recording |
+| `core/workflow.py` | Shared live/offline flow, capture and recording files, layout choice, single-pass analysis |
+| `core/bouquets.py` | Bouquet plan: variant choice, alternate list, categories, radio, LCN spacers |
+| `core/inspect.py` | Per-table summary of a recording under both layouts |
+| `core/storage.py` | Lock, bouquet-set transaction, manifest whitelist, backup, rollback |
+| `worker.py` | JSON-lines CLI (`scan`, `apply`, `restore`, `record`, `inspect`), exit codes |
+| `ui/config.py` | Persistent plugin settings, worker options, demux resolution |
+| `ui/checks.py` | Recording, 42.0°E tuner and transponder checks; channel-search offer |
+| `ui/controller.py` | Scan state machine: tuning, fallback, worker, playback restore |
+| `ui/auto.py` | Opt-in daily update in standby |
 | `ui/i18n.py` | gettext domain with fallback to the enigma2 catalog |
 | `ui/signals.py` | Bridge the two Enigma2 signal styles |
 | `ui/skin.py` | Resolution-scaled skin for HD/SD desktops |
-| `ui/screen.py` | Enigma2 event loop, transponder fallback, previous-channel restore |
+| `ui/screen.py` | Settings, preview and results on top of the controller |
 
 The `core` package has no Enigma2 imports and is fully testable off-device. The `ui`
 package is imported only on the receiver. The worker is launched as a separate process
@@ -36,7 +44,7 @@ so parsing never blocks the GUI event loop.
 
 ## Transponder fallback
 
-The screen builds its candidate list from the configured transponder followed by
+The controller builds its candidate list from the configured transponder followed by
 `TKGS_TRANSPONDERS`, keeping only those present in lamedb. A candidate is abandoned
 when the tuner does not lock within 12 s, or when the worker's `--idle-timeout`
 (20 s, capped at the scan timeout) passes without any PID 8181 data; the next
@@ -81,20 +89,56 @@ satellite; if there is more than one candidate, no automatic choice is made. For
 missing services, `lamedb` is not modified and the user is directed to the receiver's
 network scan.
 
-## Deliberately not implemented yet
+## Evidence-gated layout
 
-These items from the September 2026 research report wait for a real TS capture of
-PID 8181 or for hardware validation:
+`core/records.py` implements the September 2026 research report's record layout
+(u16 SID, TSID, ONID, LCN; u8 flags, name length; name; u8 package). The report marks it
+as unverified, and its examples are inconsistent (ONID 1070 vs 0x9E; 0x5A0000 given as
+the 42.0°E namespace, which is 9.0°E — 42.0°E is 0x01A40000). It is therefore trusted
+only when:
 
-- A fixed record layout (SID/TSID/ONID/LCN/flags/name/package id). The report marks it
-  as unverified and it differs from the layout observed in the reference, so HD/SD
-  lists, category bouquets, `(ONID, TSID, SID)` matching and an ONID filter would rest
-  on guessed fields. The report's own examples also disagree on the ONID (1070 vs
-  0x9E) and give 0x5A0000 as the 42.0°E namespace, which is 9.0°E (42.0°E is
-  0x01A40000).
-- Automatic apply, daily cron updates, triggering the receiver's network scan and
-  automatic NIM selection. They change the receiver without the user's review and
-  cannot be verified off-device.
-- Filling empty LCN slots: the table carries no channels without an LCN to place there.
-- In-process capture with `eDVBSectionReader` and Python 2.7 support: the separate
-  worker already keeps the GUI responsive, and Python 2 is outside the supported range.
+1. every section splits into whole records with no byte left over, no unknown flag bit,
+   a non-zero SID, an LCN in 1..9999 and a decodable name, and
+2. at least half of the (ONID, TSID, SID) keys exist on 42.0°E in lamedb.
+
+Otherwise the observed layout is used, exactly as before. The observed fixtures and a
+random corpus never pass the first test. Matching against lamedb by full key doubles
+as spoofing protection, so no hard-coded ONID filter is needed. The probe costs about
+0.25 ms against 5.7 ms for the observed parse on the 500-channel benchmark.
+
+Only the record layout carries HD, radio and package fields, so the alternate HD/SD list,
+the radio bouquet and category bouquets appear only with it; package names are the
+report's and provisional. `worker record` and `worker inspect` collect and summarise a
+real recording so the layout, subtables (HD and SD lists may be separate
+`table_id_extension`s) and package ids can be confirmed or corrected.
+
+## Bouquet set and backups
+
+A plan lists every bouquet the plugin should own. The store compares it with the
+`userbouquet.tkgs_navigator*` files present, writes new and changed bouquets, then the
+two indexes (links replaced in place, optionally at the top), then removes bouquets no
+longer planned, and rolls back in reverse on failure. Manifests (schema 2) record the
+digest of every touched file before and after; restore accepts only the plugin's bouquet
+names and the two indexes, and still reads schema 1 manifests from 0.3.0.
+
+*Channel number = LCN* inserts `1:832:D:0:0:0:0:0:0:0:` spacers (invisible numbered
+markers, as used by AutoBouquetsMaker) for gaps up to LCN 2000.
+
+## Automation safeguards
+
+The background updater never runs unless enabled, runs only in standby with no recording
+running or due within 30 minutes, and applies only with a second opt-in and a clean
+preview. It shares the controller with the screen, so tuning, fallback and playback
+handling are the same; leaving standby hands playback back to Enigma2 and cancels the run.
+
+The plugin never starts the receiver's channel search by itself: it asks first, and the
+background updater only skips when transponders are missing. Tuner choice is left to
+Enigma2's own allocation; the plugin checks that some DVB-S tuner is set up for 42.0°E
+and reads the demux of the locked service.
+
+## Still out of scope
+
+- Python 2.7: the code relies on Python 3 (postponed annotations, dataclasses, pathlib,
+  `os.replace`), which the report's own typing and f-string rules also require.
+- In-process capture with `eDVBSectionReader`: its availability differs between images,
+  and the separate worker already keeps the GUI responsive while isolating parse errors.
