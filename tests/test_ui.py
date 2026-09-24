@@ -335,6 +335,24 @@ class ScreenTests(EnigmaTestCase):
             self.controller.container.command,
         )
 
+    def test_already_playing_target_service_is_not_an_error(self):
+        # enigma2 refuses to replay the running service ("Ignore request to play
+        # already running service") and returns 1; that must not fail the tune.
+        self.lamedb(LAMEDB4)
+        self.nav.current = Reference("1:0:19:65:1:1:1A40000:0:0:0:")
+        real_play = self.nav.playService
+
+        def playService(ref):
+            if ref.toString() == self.nav.current.toString():
+                return 1
+            return real_play(ref)
+
+        self.nav.playService = playService
+        self.screen.start_scan()
+        self.assertEqual(self.controller.state, "tuning")
+        self.controller.check_lock()
+        self.assertIn("scan", self.controller.container.command)
+
     def test_no_demux_fails_after_lock_and_restores_playback(self):
         self.devices.clear()
         self.screen.start_scan()

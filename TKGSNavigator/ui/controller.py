@@ -122,7 +122,12 @@ class ScanController:
         self.listener.status(
             ("" if candidate.deep or not reason else reason + " ") + message % values
         )
-        if self.session.nav.playService(eServiceReference(candidate.service.reference)):
+        current = self.session.nav.getCurrentlyPlayingServiceReference()
+        playing = current and current.toString() == candidate.service.reference
+        # Replaying the running service is refused by enigma2; it is already tuned.
+        if not playing and self.session.nav.playService(
+            eServiceReference(candidate.service.reference)
+        ):
             raise ValueError(_("Could not play the TKGS service"))
         self.timer.start(200, False)
 

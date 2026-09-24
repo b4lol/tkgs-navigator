@@ -1,6 +1,6 @@
 [project]
 name = "tkgs-navigator"
-version = "0.4.2"
+version = "0.4.3"
 description = "Local TKGS discovery and recoverable bouquet updates for Enigma2"
 requires-python = ">=3.8"
 license = "GPL-2.0-or-later"
