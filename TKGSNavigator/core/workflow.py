@@ -1,13 +1,16 @@
 """Shared live/offline preview and explicit application workflow."""
 
+from __future__ import annotations
+
 import base64
 from dataclasses import asdict
 import json
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 from .constants import DEFAULT_ORBITAL
-from .lamedb import ServiceDatabase
-from .parser import parse_channels
+from .lamedb import Service, ServiceDatabase
+from .parser import Channel, parse_channels
 from .sections import TableCollector
 from .storage import BouquetStore, atomic_write
 
@@ -15,8 +18,17 @@ MAX_CAPTURE_BYTES = 2 * 1024 * 1024
 MAX_CAPTURE_SECTIONS = 512
 MAX_SECTION_BASE64 = 5464
 
+# JSON-serialisable preview report, emitted by the worker and read by the UI.
+Report = Dict[str, Any]
+Matched = List[Tuple[Channel, Service]]
 
-def load_capture(path):
+
+def load_capture(path: str | Path) -> TableCollector:
+    """Load a bounded JSON section capture.
+
+    Raises:
+        ValueError: on an oversized, malformed or unsupported capture.
+    """
     with Path(path).open("rb") as stream:
         data = stream.read(MAX_CAPTURE_BYTES + 1)
     if len(data) > MAX_CAPTURE_BYTES:
@@ -41,7 +53,7 @@ def load_capture(path):
     return collector
 
 
-def save_capture(path, collector):
+def save_capture(path: str | Path, collector: TableCollector) -> None:
     document = {
         "schema": 1,
         "crc": collector.check_crc,
@@ -50,7 +62,9 @@ def save_capture(path, collector):
     atomic_write(Path(path), json.dumps(document, indent=2).encode("utf-8"))
 
 
-def analyze(collector, database, orbital=DEFAULT_ORBITAL):
+def analyze(
+    collector: TableCollector, database: ServiceDatabase, orbital: int = DEFAULT_ORBITAL
+) -> tuple[Report, Matched]:
     """Parse and match once, returning both the JSON report and the matched pairs."""
     result = parse_channels(collector.ordered(), collector.check_crc)
     matched, skipped = database.match(result.channels, orbital)
@@ -61,7 +75,7 @@ def analyze(collector, database, orbital=DEFAULT_ORBITAL):
         warnings.append("No channels matched the receiver's TV services.")
     if not collector.check_crc:
         warnings.append("Captured with the CRC check disabled; review the names before applying.")
-    report = {
+    report: Report = {
         "schema": 1,
         "complete": collector.complete,
         "version": collector.version,
@@ -82,11 +96,20 @@ def analyze(collector, database, orbital=DEFAULT_ORBITAL):
     return report, matched
 
 
-def preview(collector, database, orbital=DEFAULT_ORBITAL):
+def preview(
+    collector: TableCollector, database: ServiceDatabase, orbital: int = DEFAULT_ORBITAL
+) -> Report:
     return analyze(collector, database, orbital)[0]
 
 
-def apply_capture(capture_path, config_dir, orbital=DEFAULT_ORBITAL):
+def apply_capture(
+    capture_path: str | Path, config_dir: str | Path, orbital: int = DEFAULT_ORBITAL
+) -> Report:
+    """Re-validate a capture against the current lamedb, back up and write the bouquet.
+
+    Raises:
+        ValueError: when the table is incomplete, ambiguous or matches nothing.
+    """
     collector = load_capture(capture_path)
     database = ServiceDatabase.load(Path(config_dir) / "lamedb")
     report, matched = analyze(collector, database, orbital)

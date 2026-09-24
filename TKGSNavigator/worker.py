@@ -1,10 +1,14 @@
 """JSON-lines worker and offline CLI. No tuning, network or implicit writes."""
 
+from __future__ import annotations
+
 import argparse
 import json
 from pathlib import Path
 import signal
 import sys
+from types import FrameType
+from typing import Any, List, Optional, Sequence
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -21,11 +25,11 @@ else:
     from .core.workflow import apply_capture, load_capture, preview, save_capture
 
 
-def emit(event, **values):
+def emit(event: str, **values: Any) -> None:
     print(json.dumps(dict(event=event, **values), ensure_ascii=True), flush=True)
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TKGS Navigator local scan and preview")
     commands = parser.add_subparsers(dest="command", required=True)
     scan = commands.add_parser("scan", help="Preview from a live DVB demux or a capture file")
@@ -53,7 +57,7 @@ def build_parser():
     return parser
 
 
-def run_scan(args, interrupted):
+def run_scan(args: argparse.Namespace, interrupted: List[bool]) -> int:
     database = ServiceDatabase.load(args.lamedb)
     collector = (
         load_capture(args.capture)
@@ -72,14 +76,15 @@ def run_scan(args, interrupted):
         save_capture(args.save_capture, collector)
     report = preview(collector, database, args.orbital)
     emit("result", **report)
-    return 0 if report["can_apply"] else 2
+    return 0 if report["can_apply"] else 2  # 2: previewed, but not applicable.
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Run a command; exit codes: 0 success, 1 error, 2 not applicable, 130 cancelled."""
     args = build_parser().parse_args(argv)
     interrupted = [False]
 
-    def cancel(signum, frame):
+    def cancel(signum: int, frame: Optional[FrameType]) -> None:
         interrupted[0] = True
 
     if args.command == "scan":

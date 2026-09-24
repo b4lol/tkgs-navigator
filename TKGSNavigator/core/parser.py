@@ -4,7 +4,10 @@ This is not a complete proprietary TKGS specification. Bounds, conflicts and
 ambiguities are checked explicitly; unsupported variants are not guessed.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Iterable
 
 from .sections import Section
 from .text import decode_name
@@ -19,11 +22,11 @@ class Channel:
 
 @dataclass
 class ParseResult:
-    channels: list
-    warnings: list
+    channels: list[Channel]
+    warnings: list[str]
 
 
-def _read_names(payload, names):
+def _read_names(payload: bytes, names: dict[int, set[str]]) -> None:
     # Tag 0x48: service descriptor following a SID and a descriptor loop.
     cursor = 0
     while True:
@@ -50,7 +53,7 @@ def _read_names(payload, names):
             names.setdefault(sid, set()).add(name)
 
 
-def _read_positions(payload, positions):
+def _read_positions(payload: bytes, positions: dict[int, set[int]]) -> None:
     # Observed LCN records: uint16 LCN, 0x02, loop length, uint16 SID.
     cursor = 2
     while True:
@@ -68,15 +71,19 @@ def _read_positions(payload, positions):
         positions.setdefault(lcn, set()).add(sid)
 
 
-def parse_channels(sections, check_crc=True):
-    names, positions = {}, {}
+def parse_channels(sections: Iterable[bytes], check_crc: bool = True) -> ParseResult:
+    """Extract (LCN, SID, name) channels; ambiguous LCNs and SIDs are skipped with a warning."""
+    names: dict[int, set[str]] = {}
+    positions: dict[int, set[int]] = {}
     for raw in sections:
         payload = Section.parse(raw, check_crc).payload
         _read_names(payload, names)
         _read_positions(payload, positions)
-    channels, warnings, seen_sids = [], [], set()
-    for lcn, candidates in sorted(positions.items()):
-        candidates = {sid for sid in candidates if sid in names}
+    channels: list[Channel] = []
+    warnings: list[str] = []
+    seen_sids: set[int] = set()
+    for lcn, sids in sorted(positions.items()):
+        candidates = {sid for sid in sids if sid in names}
         if len(candidates) != 1:
             if candidates:
                 warnings.append("LCN %d points to multiple services; skipped." % lcn)

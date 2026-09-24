@@ -1,5 +1,7 @@
 """Bounded MPEG section assembly and version-aware table collection."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from .constants import TKGS_TABLE_ID
@@ -9,12 +11,13 @@ from .crc import crc32_mpeg
 class SectionFramer:
     """Accept split/coalesced demux reads; retain at most one partial section."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.pending = bytearray()
 
-    def feed(self, chunk):
+    def feed(self, chunk: bytes) -> list[bytes]:
+        """Append a demux read and return every complete section it finishes."""
         self.pending.extend(chunk)
-        result = []
+        result: list[bytes] = []
         offset = 0
         while len(self.pending) - offset >= 3:
             size = 3 + ((self.pending[offset + 1] & 15) << 8 | self.pending[offset + 2])
@@ -42,7 +45,12 @@ class Section:
     raw: bytes
 
     @classmethod
-    def parse(cls, raw, check_crc=True):
+    def parse(cls, raw: bytes, check_crc: bool = True) -> Section:
+        """Validate a raw section.
+
+        Raises:
+            ValueError: on a malformed header, length, current_next flag or CRC.
+        """
         if len(raw) < 12 or raw[0] != TKGS_TABLE_ID or not raw[1] & 0x80:
             raise ValueError("Invalid TKGS section header")
         length = 3 + ((raw[1] & 15) << 8 | raw[2])
@@ -53,23 +61,24 @@ class Section:
         return cls(int.from_bytes(raw[3:5], "big"), (raw[5] >> 1) & 31, raw[6], raw[7], raw)
 
     @property
-    def payload(self):
+    def payload(self) -> bytes:
         return self.raw[8:-4]
 
 
 class TableCollector:
     """Keep one subtable, reject duplicates and stale version interleaving."""
 
-    def __init__(self, check_crc=True):
-        self.extension = None
-        self.version = None
-        self.last = None
-        self.parts = {}
+    def __init__(self, check_crc: bool = True) -> None:
+        self.extension: int | None = None
+        self.version: int | None = None
+        self.last: int | None = None
+        self.parts: dict[int, bytes] = {}
         self.rejected = 0
         self.duplicates = 0
         self.check_crc = check_crc
 
-    def add(self, raw):
+    def add(self, raw: bytes) -> bool:
+        """Store a section; return False when it is invalid, foreign, stale or a duplicate."""
         try:
             section = Section.parse(raw, self.check_crc)
         except ValueError:
@@ -99,12 +108,12 @@ class TableCollector:
         return True
 
     @property
-    def complete(self):
+    def complete(self) -> bool:
         return self.last is not None and len(self.parts) == self.last + 1
 
     @property
-    def missing(self):
+    def missing(self) -> list[int]:
         return [] if self.last is None else [n for n in range(self.last + 1) if n not in self.parts]
 
-    def ordered(self):
+    def ordered(self) -> list[bytes]:
         return [self.parts[n] for n in sorted(self.parts)]

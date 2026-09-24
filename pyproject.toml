@@ -24,3 +24,9 @@ select = ["E", "F", "W", "B", "I"]
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
 known-first-party = ["TKGSNavigator", "tests", "tools"]
+
+[tool.mypy]
+# mypy 2 checks against 3.10 at the lowest; 3.8 runtime support is covered by the CI test matrix.
+python_version = "3.10"
+strict = true
+files = ["TKGSNavigator/core", "TKGSNavigator/worker.py"]

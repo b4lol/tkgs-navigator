@@ -1,12 +1,19 @@
 """Single source for TKGS broadcast and Enigma2 service constants."""
 
-from collections import namedtuple
+from __future__ import annotations
+
+from typing import NamedTuple
 
 TKGS_PID = 8181
 TKGS_TABLE_ID = 0xA7
 DEFAULT_ORBITAL = 420  # Türksat 42.0°E, expressed in tenths of a degree.
 
-TuningTarget = namedtuple("TuningTarget", "frequency polarization symbol_rate")
+
+class TuningTarget(NamedTuple):
+    frequency: int  # MHz
+    polarization: str  # "H", "V", "L" or "R"
+    symbol_rate: int  # kSym/s
+
 
 # TKGS data transponders on Türksat 42°E (MHz, polarization, kSym/s), in trial order.
 # Published listings, not a broadcaster guarantee; the receiver's lamedb decides which exist.

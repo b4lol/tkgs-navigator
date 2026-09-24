@@ -1,5 +1,7 @@
 """Nonblocking Linux DVB section acquisition; bounded work per event loop."""
 
+from __future__ import annotations
+
 import errno
 import fcntl
 import os
@@ -7,6 +9,7 @@ import platform
 import select
 import struct
 import time
+from typing import Callable, Dict, Optional, Union
 
 from .constants import TKGS_PID, TKGS_TABLE_ID
 from .sections import SectionFramer, TableCollector
@@ -24,13 +27,18 @@ DMX_IMMEDIATE_START = 4
 # Native byte order; struct instead of ctypes, which OE images ship as a separate package.
 FILTER_PARAMETERS = struct.Struct("=H16s16s16s2xII")
 
+Progress = Dict[str, Optional[Union[int, float, bool]]]
 
-def filter_parameters(check_crc=True):
+
+def filter_parameters(check_crc: bool = True) -> bytes:
     flags = (DMX_CHECK_CRC if check_crc else 0) | DMX_IMMEDIATE_START
     return FILTER_PARAMETERS.pack(TKGS_PID, bytes([TKGS_TABLE_ID]), b"\xff", b"", 0, flags)
 
 
-def ioctl_request(number, size=0, write=False, machine=None):
+def ioctl_request(
+    number: int, size: int = 0, write: bool = False, machine: str | None = None
+) -> int:
+    """Encode a Linux _IO/_IOW request for the DVB 'o' ioctl family on the given CPU."""
     machine = (machine or platform.machine()).lower()
     special = machine.startswith(("mips", "ppc", "powerpc", "sparc", "parisc", "alpha"))
     bits = 13 if special else 14
@@ -42,11 +50,11 @@ class Cancelled(Exception):
     pass
 
 
-def _start_filter(fd, check_crc=True):
+def _start_filter(fd: int, check_crc: bool = True) -> None:
     fcntl.ioctl(fd, ioctl_request(43, FILTER_PARAMETERS.size, True), filter_parameters(check_crc))
 
 
-def _snapshot(collector, elapsed, timeout):
+def _snapshot(collector: TableCollector, elapsed: float, timeout: int) -> Progress:
     return {
         "elapsed": round(elapsed, 1),
         "timeout": timeout,
@@ -59,11 +67,20 @@ def _snapshot(collector, elapsed, timeout):
 
 
 def capture(
-    device, timeout=60, cancelled=lambda: False, progress=lambda data: None, idle_timeout=None
-):
+    device: str,
+    timeout: int = 60,
+    cancelled: Callable[[], bool] = lambda: False,
+    progress: Callable[[Progress], None] = lambda data: None,
+    idle_timeout: int | None = None,
+) -> TableCollector:
     """Collect one TKGS table.
 
     Stops early when the table is complete, or when no data arrives within idle_timeout.
+
+    Raises:
+        ValueError: on an out-of-range timeout.
+        Cancelled: when cancelled() turns true.
+        OSError: when the demux cannot be opened, filtered or read.
     """
     if not 1 <= timeout <= 180:
         raise ValueError("Scan timeout must be between 1 and 180 seconds")
