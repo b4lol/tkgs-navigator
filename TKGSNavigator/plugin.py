@@ -14,8 +14,22 @@ def open_plugin(session, **kwargs):
     session.open(NavigatorScreen)
 
 
+updater = None
+
+
+def session_start(reason, session=None, **kwargs):
+    """Start the background updater; it stays idle unless the daily update is enabled."""
+    global updater
+    if reason == 0 and session is not None and updater is None:
+        from .ui.auto import AutoUpdater
+
+        updater = AutoUpdater(session)
+        updater.start()
+
+
 def Plugins(**kwargs):
     return [
+        PluginDescriptor(where=PluginDescriptor.WHERE_SESSIONSTART, fnc=session_start),
         PluginDescriptor(
             name=NAME,
             description=DESCRIPTION,

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -421,6 +422,83 @@ class ScreenTests(EnigmaTestCase):
         from xml.etree.ElementTree import fromstring
 
         self.assertEqual(fromstring(self.screen.skin).tag, "screen")
+
+
+class AutoUpdaterTests(EnigmaTestCase):
+    def setUp(self):
+        super().setUp()
+        self.module = importlib.import_module("TKGSNavigator.ui.auto")
+        self.now = time.mktime((2026, 9, 24, 6, 0, 0, 0, 0, -1))
+        self.updater = self.module.AutoUpdater(self.session, clock=lambda: self.now)
+        self.addCleanup(self.updater.stop)
+        self.cfg = self.updater.cfg
+        self.cfg.auto_update.value = True
+        self.standby.inStandby = object()
+        self.nav.current = None
+
+    def run_scan(self, event):
+        self.updater.tick()
+        controller = self.updater.controller
+        controller.check_lock()
+        wire = (json.dumps(event) + "\n").encode("ascii")
+        controller.receive(wire)
+        controller.finished(0)
+        return controller
+
+    def test_due_after_the_hour_once_per_day(self):
+        at = lambda h, d=24: time.mktime((2026, 9, d, h, 0, 0, 0, 0, -1))  # noqa: E731
+        self.assertFalse(self.module.due(at(4), 5, at(5, 23)))
+        self.assertTrue(self.module.due(at(6), 5, at(5, 23)))
+        self.assertFalse(self.module.due(at(6), 5, at(5)))
+        self.assertTrue(self.module.due(at(6), 5, 0))
+
+    def test_nothing_happens_unless_enabled_due_and_in_standby(self):
+        for change in (
+            lambda: setattr(self.cfg.auto_update, "value", False),
+            lambda: setattr(self.standby, "inStandby", None),
+            lambda: setattr(self.nav, "recordings", [object()]),
+            lambda: setattr(self.nav.RecordTimer, "getNextRecordingTime", lambda: self.now + 600),
+            lambda: setattr(self.cfg.last_auto_update, "value", int(self.now)),
+        ):
+            self.setUp()
+            change()
+            self.updater.tick()
+            self.assertIsNone(self.updater.controller)
+
+    def test_preview_only_by_default(self):
+        controller = self.run_scan(result_event())
+        self.assertNotIn(" apply ", controller.container.command)
+        self.assertIsNone(self.updater.controller)
+        self.assertEqual(self.cfg.last_auto_update.value, int(self.now))
+        self.assertEqual(self.nav.stopped, 1)
+
+    def test_clean_preview_is_applied_when_allowed(self):
+        self.cfg.auto_apply.value = True
+        controller = self.run_scan(result_event())
+        self.assertIn(" apply ", controller.container.command)
+        self.assertEqual(self.cfg.last_auto_update.value, 0)
+        controller.receive(b'{"event": "applied", "backup": "20260101T000000Z-0123abcd"}\n')
+        controller.finished(0)
+        self.assertIsNone(self.updater.controller)
+        self.assertEqual(self.cfg.last_auto_update.value, int(self.now))
+
+    def test_preview_with_warnings_is_not_applied(self):
+        self.cfg.auto_apply.value = True
+        partial = TableCollector()
+        partial.add(sample_sections()[0])
+        controller = self.run_scan(result_event(partial))
+        self.assertNotIn(" apply ", controller.container.command)
+
+    def test_leaving_standby_cancels_without_touching_playback(self):
+        self.updater.tick()
+        controller = self.updater.controller
+        controller.check_lock()
+        self.standby.inStandby = None
+        self.updater.tick()
+        self.assertTrue(controller.container.killed)
+        self.assertEqual(self.nav.stopped, 0)
+        self.assertIsNone(self.updater.controller)
+        self.assertEqual(self.cfg.last_auto_update.value, 0)
 
 
 if __name__ == "__main__":
