@@ -1,4 +1,5 @@
 """Nonblocking Linux DVB section acquisition; bounded work per event loop."""
+
 import errno
 import fcntl
 import os
@@ -18,7 +19,8 @@ CRC_FALLBACK_AFTER = 25.0
 DMX_CHECK_CRC = 1
 DMX_IMMEDIATE_START = 4
 
-# struct dmx_sct_filter_params: u16 pid, u8 filter/mask/mode[16], 2 pad bytes, u32 timeout, u32 flags.
+# struct dmx_sct_filter_params: u16 pid, u8 filter/mask/mode[16], 2 pad bytes,
+# u32 timeout, u32 flags.
 # Native byte order; struct instead of ctypes, which OE images ship as a separate package.
 FILTER_PARAMETERS = struct.Struct("=H16s16s16s2xII")
 
@@ -45,15 +47,24 @@ def _start_filter(fd, check_crc=True):
 
 
 def _snapshot(collector, elapsed, timeout):
-    return {"elapsed": round(elapsed, 1), "timeout": timeout,
-            "sections": len(collector.parts),
-            "expected": None if collector.last is None else collector.last + 1,
-            "rejected": collector.rejected, "duplicates": collector.duplicates,
-            "crc": collector.check_crc}
+    return {
+        "elapsed": round(elapsed, 1),
+        "timeout": timeout,
+        "sections": len(collector.parts),
+        "expected": None if collector.last is None else collector.last + 1,
+        "rejected": collector.rejected,
+        "duplicates": collector.duplicates,
+        "crc": collector.check_crc,
+    }
 
 
-def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: None, idle_timeout=None):
-    """Collect one TKGS table; stop early when it is complete or when nothing arrives within idle_timeout."""
+def capture(
+    device, timeout=60, cancelled=lambda: False, progress=lambda data: None, idle_timeout=None
+):
+    """Collect one TKGS table.
+
+    Stops early when the table is complete, or when no data arrives within idle_timeout.
+    """
     if not 1 <= timeout <= 180:
         raise ValueError("Scan timeout must be between 1 and 180 seconds")
     if idle_timeout is not None and not 1 <= idle_timeout <= timeout:
@@ -99,7 +110,11 @@ def capture(device, timeout=60, cancelled=lambda: False, progress=lambda data: N
             if idle_timeout is not None and not received and now - started >= idle_timeout:
                 progress(_snapshot(collector, now - started, timeout))
                 break
-            if not collector.complete and collector.check_crc and now - started >= CRC_FALLBACK_AFTER:
+            if (
+                not collector.complete
+                and collector.check_crc
+                and now - started >= CRC_FALLBACK_AFTER
+            ):
                 try:
                     fcntl.ioctl(fd, stop)
                 except OSError:

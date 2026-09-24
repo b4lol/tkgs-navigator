@@ -1,4 +1,5 @@
 """JSON-lines worker and offline CLI. No tuning, network or implicit writes."""
+
 import argparse
 import json
 from pathlib import Path
@@ -34,9 +35,15 @@ def build_parser():
     scan.add_argument("--lamedb", required=True)
     scan.add_argument("--save-capture")
     scan.add_argument("--timeout", type=int, default=60)
-    scan.add_argument("--idle-timeout", type=int, help="Stop early if no TKGS data arrives within this many seconds")
+    scan.add_argument(
+        "--idle-timeout",
+        type=int,
+        help="Stop early if no TKGS data arrives within this many seconds",
+    )
     scan.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
-    apply = commands.add_parser("apply", help="Validate a full capture, back up, and write the bouquet")
+    apply = commands.add_parser(
+        "apply", help="Validate a full capture, back up, and write the bouquet"
+    )
     apply.add_argument("--capture", required=True)
     apply.add_argument("--config-dir", required=True)
     apply.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
@@ -48,9 +55,17 @@ def build_parser():
 
 def run_scan(args, interrupted):
     database = ServiceDatabase.load(args.lamedb)
-    collector = load_capture(args.capture) if args.capture else dvb.capture(
-        args.device, args.timeout, lambda: interrupted[0], lambda data: emit("progress", **data),
-        args.idle_timeout)
+    collector = (
+        load_capture(args.capture)
+        if args.capture
+        else dvb.capture(
+            args.device,
+            args.timeout,
+            lambda: interrupted[0],
+            lambda data: emit("progress", **data),
+            args.idle_timeout,
+        )
+    )
     if interrupted[0]:
         raise dvb.Cancelled("Scan cancelled")
     if args.save_capture:

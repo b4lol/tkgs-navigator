@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Generate clearly synthetic, CRC-valid offline examples; never receiver data."""
+
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from tests.helpers import LAMEDB4, sample_sections
 from TKGSNavigator.core.sections import TableCollector
 from TKGSNavigator.core.workflow import save_capture
-from tests.helpers import LAMEDB4, sample_sections
 
 
 def generate():

@@ -3,6 +3,7 @@
 This is not a complete proprietary TKGS specification. Bounds, conflicts and
 ambiguities are checked explicitly; unsupported variants are not guessed.
 """
+
 from dataclasses import dataclass
 
 from .sections import Section
@@ -43,8 +44,8 @@ def _read_names(payload, names):
         name_at = tag + 4 + provider_size
         if name_at >= end or name_at + 1 + payload[name_at] != end:
             continue
-        sid = int.from_bytes(payload[tag - 5:tag - 3], "big")
-        name = decode_name(payload[name_at + 1:end])
+        sid = int.from_bytes(payload[tag - 5 : tag - 3], "big")
+        name = decode_name(payload[name_at + 1 : end])
         if sid and name:
             names.setdefault(sid, set()).add(name)
 
@@ -59,11 +60,11 @@ def _read_positions(payload, positions):
         cursor = marker + 1
         if marker + 5 > len(payload):
             continue
-        lcn = int.from_bytes(payload[marker - 2:marker], "big")
+        lcn = int.from_bytes(payload[marker - 2 : marker], "big")
         loop = ((payload[marker + 1] & 15) << 8) | payload[marker + 2]
         if not 1 <= lcn <= 2000 or not 2 <= loop < 100 or marker + 3 + loop > len(payload):
             continue
-        sid = int.from_bytes(payload[marker + 3:marker + 5], "big")
+        sid = int.from_bytes(payload[marker + 3 : marker + 5], "big")
         positions.setdefault(lcn, set()).add(sid)
 
 

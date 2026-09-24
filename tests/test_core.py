@@ -6,17 +6,24 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tests.helpers import (
+    LAMEDB4,
+    LAMEDB5,
+    LAMEDB_TWO_TRANSPONDERS,
+    lcn_record,
+    sample_sections,
+    section,
+    service_record,
+)
 from TKGSNavigator.core.constants import TKGS_TRANSPONDERS, TuningTarget
 from TKGSNavigator.core.crc import crc32_mpeg
 from TKGSNavigator.core.dvb import FILTER_PARAMETERS, filter_parameters, ioctl_request
-from TKGSNavigator.core.lamedb import ServiceDatabase, Service, Transponder
+from TKGSNavigator.core.lamedb import Service, ServiceDatabase, Transponder
 from TKGSNavigator.core.parser import Channel, parse_channels
 from TKGSNavigator.core.sections import Section, SectionFramer, TableCollector
 from TKGSNavigator.core.storage import BACKUP_DIR, BOUQUET, INDEX, BouquetStore, render_bouquet
 from TKGSNavigator.core.text import decode_name
 from TKGSNavigator.core.workflow import apply_capture, load_capture, preview, save_capture
-from tests.helpers import (LAMEDB4, LAMEDB5, LAMEDB_TWO_TRANSPONDERS, lcn_record, sample_sections, section,
-                           service_record)
 
 
 class SectionTests(unittest.TestCase):
@@ -41,7 +48,7 @@ class SectionTests(unittest.TestCase):
         for chunk_size in (1, 3, 13, 8192):
             framer, actual = SectionFramer(), []
             for start in range(0, len(wire), chunk_size):
-                actual.extend(framer.feed(wire[start:start + chunk_size]))
+                actual.extend(framer.feed(wire[start : start + chunk_size]))
             self.assertEqual(actual, samples)
             self.assertEqual(len(framer.pending), 0)
 
@@ -97,8 +104,10 @@ class SectionTests(unittest.TestCase):
 class ParserTests(unittest.TestCase):
     def test_cross_section_names_and_lcns(self):
         result = parse_channels(sample_sections()[::-1])
-        self.assertEqual([(c.lcn, c.sid, c.name) for c in result.channels],
-                         [(1, 101, "Sample News HD"), (2, 102, "Sample Culture")])
+        self.assertEqual(
+            [(c.lcn, c.sid, c.name) for c in result.channels],
+            [(1, 101, "Sample News HD"), (2, 102, "Sample Culture")],
+        )
 
     def test_name_encodings_and_control_injection(self):
         self.assertEqual(decode_name("Çığ ŞÖLEN".encode("iso-8859-9")), "Çığ ŞÖLEN")
@@ -107,7 +116,12 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(decode_name(b"\x15\xff"), "")
 
     def test_conflicting_lcn_does_not_guess(self):
-        payload = service_record(101, "A") + service_record(102, "B") + lcn_record(1, 101) + lcn_record(1, 102)
+        payload = (
+            service_record(101, "A")
+            + service_record(102, "B")
+            + lcn_record(1, 101)
+            + lcn_record(1, 102)
+        )
         result = parse_channels([section(payload)])
         self.assertEqual(result.channels, [])
         self.assertTrue(result.warnings)
@@ -164,9 +178,13 @@ class DatabaseTests(unittest.TestCase):
         database = ServiceDatabase.parse(LAMEDB_TWO_TRANSPONDERS)
         targets = (TuningTarget(11000, "V", 27500), TKGS_TRANSPONDERS[1]) + TKGS_TRANSPONDERS
         found = database.tuning_candidates(targets)
-        self.assertEqual([(target.frequency, service.sid) for target, service in found],
-                         [(12423, 0x67), (12380, 0x65)])
-        self.assertEqual(ServiceDatabase.parse(LAMEDB4).tuning_candidates([TuningTarget(11000, "V", 27500)]), [])
+        self.assertEqual(
+            [(target.frequency, service.sid) for target, service in found],
+            [(12423, 0x67), (12380, 0x65)],
+        )
+        self.assertEqual(
+            ServiceDatabase.parse(LAMEDB4).tuning_candidates([TuningTarget(11000, "V", 27500)]), []
+        )
 
     def test_v5_quoted_name(self):
         db = ServiceDatabase.parse(LAMEDB5.replace('"Sample Culture"', '"Culture, Arts"'))
@@ -186,7 +204,7 @@ class StorageTests(unittest.TestCase):
         self.store = BouquetStore(self.root)
         self.db = ServiceDatabase.parse(LAMEDB4)
         self.matched = self.db.match(parse_channels(sample_sections()).channels)[0]
-        self.original = b'#NAME My bouquets\n#SERVICE unrelated\n'
+        self.original = b"#NAME My bouquets\n#SERVICE unrelated\n"
         (self.root / INDEX).write_bytes(self.original)
 
     def test_apply_backup_restore_and_idempotency(self):
@@ -207,6 +225,7 @@ class StorageTests(unittest.TestCase):
 
     def test_failure_on_second_file_rolls_back(self):
         from TKGSNavigator.core import storage
+
         real = storage.atomic_write
         failed = [False]
 
@@ -287,8 +306,11 @@ class WorkflowTests(unittest.TestCase):
     def test_bad_capture_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "capture.json"
-            for document in ({"schema": 2, "sections": []}, {"schema": 1, "sections": ["not base64!"]},
-                             {"schema": 1, "sections": ["x" * 6000]}):
+            for document in (
+                {"schema": 2, "sections": []},
+                {"schema": 1, "sections": ["not base64!"]},
+                {"schema": 1, "sections": ["x" * 6000]},
+            ):
                 path.write_text(json.dumps(document))
                 with self.assertRaises(ValueError):
                     load_capture(path)

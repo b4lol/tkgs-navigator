@@ -10,3 +10,17 @@ dependencies = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/*.py" = ["E402"]  # sys.path bootstrap precedes project imports.
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["TKGSNavigator", "tests", "tools"]

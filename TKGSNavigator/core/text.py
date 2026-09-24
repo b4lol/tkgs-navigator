@@ -1,9 +1,12 @@
 """Decode DVB-style channel-name byte strings into safe display text."""
+
 import unicodedata
 
 
 def clean_name(text):
-    return " ".join("".join(c if not unicodedata.category(c).startswith("C") else " " for c in text).split())[:160]
+    return " ".join(
+        "".join(c if not unicodedata.category(c).startswith("C") else " " for c in text).split()
+    )[:160]
 
 
 def decode_name(raw):

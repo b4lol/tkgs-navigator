@@ -9,12 +9,12 @@ import types
 import unittest
 from unittest.mock import patch
 
+from tests.helpers import LAMEDB4, LAMEDB_TWO_TRANSPONDERS, sample_sections
 from TKGSNavigator.core.dvb import FILTER_PARAMETERS, Cancelled, capture
 from TKGSNavigator.core.lamedb import ServiceDatabase
 from TKGSNavigator.core.sections import TableCollector
 from TKGSNavigator.core.storage import BOUQUET
 from TKGSNavigator.core.workflow import preview, save_capture
-from tests.helpers import LAMEDB4, LAMEDB_TWO_TRANSPONDERS, sample_sections
 
 SCREEN_MODULE = "TKGSNavigator.ui.screen"
 
@@ -25,12 +25,13 @@ def filter_flags(params):
 
 class CaptureTests(unittest.TestCase):
     def test_nonblocking_capture_closes_fd_and_stops_early(self):
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
-             patch("TKGSNavigator.core.dvb.os.close") as closed, \
-             patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, \
-             patch("TKGSNavigator.core.dvb.select.select", return_value=([42], [], [])), \
-             patch("TKGSNavigator.core.dvb.os.read", return_value=b"".join(sample_sections())) as read, \
-             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=[0, 0, 0.1]):
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ) as closed, patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, patch(
+            "TKGSNavigator.core.dvb.select.select", return_value=([42], [], [])
+        ), patch(
+            "TKGSNavigator.core.dvb.os.read", return_value=b"".join(sample_sections())
+        ) as read, patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=[0, 0, 0.1]):
             events = []
             result = capture("/fake/demux", progress=events.append)
             self.assertTrue(result.complete)
@@ -46,16 +47,18 @@ class CaptureTests(unittest.TestCase):
             clock[0] += interval
             return ([], [], [])
 
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
-             patch("TKGSNavigator.core.dvb.os.close"), \
-             patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, \
-             patch("TKGSNavigator.core.dvb.select.select", side_effect=idle_select), \
-             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: clock[0]):
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ), patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, patch(
+            "TKGSNavigator.core.dvb.select.select", side_effect=idle_select
+        ), patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: clock[0]):
             events = []
             result = capture("/fake/demux", progress=events.append)
             self.assertFalse(result.complete)
             self.assertFalse(result.check_crc)
-            flags = [filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2]
+            flags = [
+                filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2
+            ]
             self.assertEqual(flags, [5, 4])
             self.assertFalse(events[-1]["crc"])
 
@@ -66,28 +69,32 @@ class CaptureTests(unittest.TestCase):
             clock[0] += interval
             return ([], [], [])
 
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
-             patch("TKGSNavigator.core.dvb.os.close") as closed, \
-             patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, \
-             patch("TKGSNavigator.core.dvb.select.select", side_effect=idle_select), \
-             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: clock[0]):
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ) as closed, patch("TKGSNavigator.core.dvb.fcntl.ioctl") as ioctl, patch(
+            "TKGSNavigator.core.dvb.select.select", side_effect=idle_select
+        ), patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: clock[0]):
             events = []
             result = capture("/fake/demux", progress=events.append, idle_timeout=20)
             self.assertEqual(result.parts, {})
             self.assertTrue(result.check_crc)
             self.assertLess(clock[0], 21)
             self.assertEqual(events[-1]["sections"], 0)
-            self.assertEqual([filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2], [5])
+            self.assertEqual(
+                [filter_flags(call.args[2]) for call in ioctl.call_args_list if len(call.args) > 2],
+                [5],
+            )
             closed.assert_called_once_with(42)
 
     def test_table_completed_after_fallback_deadline_keeps_crc(self):
         clock = iter([0.0, 0.0, 30.0])
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
-             patch("TKGSNavigator.core.dvb.os.close"), \
-             patch("TKGSNavigator.core.dvb.fcntl.ioctl"), \
-             patch("TKGSNavigator.core.dvb.select.select", return_value=([42], [], [])), \
-             patch("TKGSNavigator.core.dvb.os.read", return_value=b"".join(sample_sections())), \
-             patch("TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: next(clock, 30.0)):
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ), patch("TKGSNavigator.core.dvb.fcntl.ioctl"), patch(
+            "TKGSNavigator.core.dvb.select.select", return_value=([42], [], [])
+        ), patch("TKGSNavigator.core.dvb.os.read", return_value=b"".join(sample_sections())), patch(
+            "TKGSNavigator.core.dvb.time.monotonic", side_effect=lambda: next(clock, 30.0)
+        ):
             result = capture("/fake/demux")
             self.assertTrue(result.complete)
             self.assertTrue(result.check_crc)
@@ -97,17 +104,19 @@ class CaptureTests(unittest.TestCase):
             capture("/fake/demux", timeout=10, idle_timeout=20)
 
     def test_cancellation_closes_fd(self):
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
-             patch("TKGSNavigator.core.dvb.os.close") as closed, \
-             patch("TKGSNavigator.core.dvb.fcntl.ioctl"):
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ) as closed, patch("TKGSNavigator.core.dvb.fcntl.ioctl"):
             with self.assertRaises(Cancelled):
                 capture("/fake/demux", cancelled=lambda: True)
             closed.assert_called_once_with(42)
 
     def test_filter_failure_closes_fd(self):
-        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), \
-             patch("TKGSNavigator.core.dvb.os.close") as closed, \
-             patch("TKGSNavigator.core.dvb.fcntl.ioctl", side_effect=OSError("driver error")):
+        with patch("TKGSNavigator.core.dvb.os.open", return_value=42), patch(
+            "TKGSNavigator.core.dvb.os.close"
+        ) as closed, patch(
+            "TKGSNavigator.core.dvb.fcntl.ioctl", side_effect=OSError("driver error")
+        ):
             with self.assertRaises(OSError):
                 capture("/fake/demux")
             closed.assert_called_once_with(42)
@@ -124,20 +133,49 @@ class CliTests(unittest.TestCase):
                 collector.add(raw)
             save_capture(folder / "record.json", collector)
             worker = str(root / "TKGSNavigator/worker.py")
-            command = [sys.executable, worker, "scan", "--capture", str(folder / "record.json"),
-                       "--lamedb", str(folder / "lamedb")]
+            command = [
+                sys.executable,
+                worker,
+                "scan",
+                "--capture",
+                str(folder / "record.json"),
+                "--lamedb",
+                str(folder / "lamedb"),
+            ]
             result = subprocess.run(command, capture_output=True, text=True, cwd=str(folder))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(json.loads(result.stdout)["can_apply"])
             self.assertFalse((folder / "bouquets.tv").exists())
-            result = subprocess.run([sys.executable, worker, "apply", "--capture", str(folder / "record.json"),
-                                     "--config-dir", str(folder)], capture_output=True, text=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    worker,
+                    "apply",
+                    "--capture",
+                    str(folder / "record.json"),
+                    "--config-dir",
+                    str(folder),
+                ],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             event = json.loads(result.stdout)
             self.assertEqual(event["event"], "applied")
             self.assertTrue((folder / BOUQUET).exists())
-            result = subprocess.run([sys.executable, worker, "restore", "--backup", event["backup"],
-                                     "--config-dir", str(folder)], capture_output=True, text=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    worker,
+                    "restore",
+                    "--backup",
+                    event["backup"],
+                    "--config-dir",
+                    str(folder),
+                ],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((folder / BOUQUET).exists())
 
@@ -145,12 +183,15 @@ class CliTests(unittest.TestCase):
 class TranslationTests(unittest.TestCase):
     def test_plugin_catalog_first_then_enigma2_catalog(self):
         from TKGSNavigator.ui import i18n
-        with patch.object(i18n.gettext, "dgettext", return_value="Kapat") as plugin, \
-             patch.object(i18n.gettext, "gettext", return_value="unused"):
+
+        with patch.object(i18n.gettext, "dgettext", return_value="Kapat") as plugin, patch.object(
+            i18n.gettext, "gettext", return_value="unused"
+        ):
             self.assertEqual(i18n._("Close"), "Kapat")
             plugin.assert_called_once_with(i18n.DOMAIN, "Close")
-        with patch.object(i18n.gettext, "dgettext", side_effect=lambda domain, text: text), \
-             patch.object(i18n.gettext, "gettext", return_value="Schließen"):
+        with patch.object(
+            i18n.gettext, "dgettext", side_effect=lambda domain, text: text
+        ), patch.object(i18n.gettext, "gettext", return_value="Schließen"):
             self.assertEqual(i18n._("Close"), "Schließen")
 
     def test_template_lists_every_ui_message(self):
@@ -158,7 +199,11 @@ class TranslationTests(unittest.TestCase):
         messages = set()
         for path in [root / "plugin.py"] + sorted((root / "ui").glob("*.py")):
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-                if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_" and node.args:
+                if (
+                    isinstance(node, ast.Call)
+                    and getattr(node.func, "id", None) == "_"
+                    and node.args
+                ):
                     messages.add(node.args[0].value)
         self.assertTrue(messages)
         self.assertEqual(messages - template_messages(root / "locale" / "TKGSNavigator.pot"), set())
@@ -284,8 +329,11 @@ class Navigation:
         return self.recordings
 
     def getCurrentService(self):
-        return types.SimpleNamespace(frontendInfo=lambda: types.SimpleNamespace(
-            getFrontendStatus=lambda: {"tuner_locked": self.locked}))
+        return types.SimpleNamespace(
+            frontendInfo=lambda: types.SimpleNamespace(
+                getFrontendStatus=lambda: {"tuner_locked": self.locked}
+            )
+        )
 
 
 class ScreenTests(unittest.TestCase):
@@ -305,15 +353,30 @@ class ScreenTests(unittest.TestCase):
         module("Components.ConfigList", ConfigList=Widget)
         for name in ("Label", "MenuList", "ProgressBar"):
             module("Components." + name, **{name: Widget})
-        module("Components.config", config=types.SimpleNamespace(plugins=types.SimpleNamespace()),
-               configfile=types.SimpleNamespace(save=lambda: None), ConfigSubsection=types.SimpleNamespace,
-               ConfigInteger=Setting, ConfigSelection=Setting, getConfigListEntry=lambda *args: args,
-               KEY_LEFT=0, KEY_RIGHT=1, KEY_0=10)
+        module(
+            "Components.config",
+            config=types.SimpleNamespace(plugins=types.SimpleNamespace()),
+            configfile=types.SimpleNamespace(save=lambda: None),
+            ConfigSubsection=types.SimpleNamespace,
+            ConfigInteger=Setting,
+            ConfigSelection=Setting,
+            getConfigListEntry=lambda *args: args,
+            KEY_LEFT=0,
+            KEY_RIGHT=1,
+            KEY_0=10,
+        )
         module("Screens.Screen", Screen=FakeScreen)
         size = types.SimpleNamespace(width=lambda: 1280, height=lambda: 720)
-        module("enigma", eConsoleAppContainer=Container, eTimer=Timer, eServiceReference=Reference,
-               eDVBDB=types.SimpleNamespace(getInstance=lambda: types.SimpleNamespace(reloadBouquets=lambda: None)),
-               getDesktop=lambda index: types.SimpleNamespace(size=lambda: size))
+        module(
+            "enigma",
+            eConsoleAppContainer=Container,
+            eTimer=Timer,
+            eServiceReference=Reference,
+            eDVBDB=types.SimpleNamespace(
+                getInstance=lambda: types.SimpleNamespace(reloadBouquets=lambda: None)
+            ),
+            getDesktop=lambda index: types.SimpleNamespace(size=lambda: size),
+        )
         self.patch = patch.dict(sys.modules, modules)
         self.patch.start()
         self.addCleanup(self.patch.stop)
@@ -347,7 +410,7 @@ class ScreenTests(unittest.TestCase):
         event = dict(event="result", **preview(collector, ServiceDatabase.parse(LAMEDB4)))
         wire = (json.dumps(event) + "\n").encode("ascii")
         for offset in range(0, len(wire), 7):
-            self.screen.receive(wire[offset:offset + 7])
+            self.screen.receive(wire[offset : offset + 7])
         self.screen.finished(0)
         self.assertEqual(self.nav.current.toString(), "original-service")
         self.assertEqual(len(self.screen["channels"].list), 2)
@@ -442,6 +505,7 @@ class ScreenTests(unittest.TestCase):
 
     def test_skin_is_valid_xml(self):
         from xml.etree.ElementTree import fromstring
+
         self.assertEqual(fromstring(self.screen.skin).tag, "screen")
 
 

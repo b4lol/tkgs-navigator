@@ -1,8 +1,8 @@
 import ast
 import io
 from pathlib import Path
-import tempfile
 import tarfile
+import tempfile
 import unittest
 
 from tools.build import ROOT, build
@@ -13,11 +13,11 @@ def ar_members(data):
         raise ValueError("Not ar")
     offset, members = 8, {}
     while offset < len(data):
-        header = data[offset:offset + 60]
+        header = data[offset : offset + 60]
         name = header[:16].decode("ascii").strip().rstrip("/")
         size = int(header[48:58])
         offset += 60
-        members[name] = data[offset:offset + size]
+        members[name] = data[offset : offset + size]
         offset += size + size % 2
     return members
 
@@ -41,7 +41,9 @@ class BuildTests(unittest.TestCase):
                     for name in names:
                         if name.endswith(".py"):
                             original = ROOT / "TKGSNavigator" / name.split("TKGSNavigator/", 1)[1]
-                            self.assertEqual(archive.extractfile(name).read(), original.read_bytes())
+                            self.assertEqual(
+                                archive.extractfile(name).read(), original.read_bytes()
+                            )
 
     def test_gzip_header_is_platform_independent_and_license_shipped(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -50,10 +52,14 @@ class BuildTests(unittest.TestCase):
                 data = ar_members(path.read_bytes())["data.tar.gz"]
                 self.assertEqual(data[:10], b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff")
                 with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-                    self.assertTrue(any(name.endswith("TKGSNavigator/LICENSE") for name in archive.getnames()))
+                    self.assertTrue(
+                        any(name.endswith("TKGSNavigator/LICENSE") for name in archive.getnames())
+                    )
             source = next(p for p in artifacts if p.name.endswith("source.tar.gz"))
             with tarfile.open(fileobj=io.BytesIO(source.read_bytes())) as archive:
-                self.assertTrue(any(name.endswith("tkgs-navigator/LICENSE") for name in archive.getnames()))
+                self.assertTrue(
+                    any(name.endswith("tkgs-navigator/LICENSE") for name in archive.getnames())
+                )
 
     def test_python38_syntax(self):
         for folder in ("TKGSNavigator", "tools", "tests"):

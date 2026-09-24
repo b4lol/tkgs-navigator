@@ -1,4 +1,5 @@
 """Single source for TKGS broadcast and Enigma2 service constants."""
+
 from collections import namedtuple
 
 TKGS_PID = 8181

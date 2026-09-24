@@ -1,4 +1,5 @@
 """Bounded MPEG section assembly and version-aware table collection."""
+
 from dataclasses import dataclass
 
 from .constants import TKGS_TABLE_ID
@@ -17,12 +18,16 @@ class SectionFramer:
         offset = 0
         while len(self.pending) - offset >= 3:
             size = 3 + ((self.pending[offset + 1] & 15) << 8 | self.pending[offset + 2])
-            if self.pending[offset] != TKGS_TABLE_ID or not self.pending[offset + 1] & 0x80 or size < 12:
+            if (
+                self.pending[offset] != TKGS_TABLE_ID
+                or not self.pending[offset + 1] & 0x80
+                or size < 12
+            ):
                 offset += 1
                 continue
             if len(self.pending) - offset < size:
                 break
-            result.append(bytes(self.pending[offset:offset + size]))
+            result.append(bytes(self.pending[offset : offset + size]))
             offset += size
         del self.pending[:offset]
         return result

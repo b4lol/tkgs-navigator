@@ -1,4 +1,5 @@
 """Plugin translation domain with a fallback to the enigma2 catalog for common words."""
+
 import gettext
 from pathlib import Path
 

@@ -1,8 +1,9 @@
 """Shared live/offline preview and explicit application workflow."""
-from dataclasses import asdict
-from pathlib import Path
+
 import base64
+from dataclasses import asdict
 import json
+from pathlib import Path
 
 from .constants import DEFAULT_ORBITAL
 from .lamedb import ServiceDatabase
@@ -21,7 +22,11 @@ def load_capture(path):
     if len(data) > MAX_CAPTURE_BYTES:
         raise ValueError("Capture file exceeds the 2 MiB limit")
     document = json.loads(data)
-    if not isinstance(document, dict) or document.get("schema") != 1 or not isinstance(document.get("sections"), list):
+    if (
+        not isinstance(document, dict)
+        or document.get("schema") != 1
+        or not isinstance(document.get("sections"), list)
+    ):
         raise ValueError("Unsupported capture format")
     if len(document["sections"]) > MAX_CAPTURE_SECTIONS:
         raise ValueError("Capture has too many sections")
@@ -37,8 +42,11 @@ def load_capture(path):
 
 
 def save_capture(path, collector):
-    document = {"schema": 1, "crc": collector.check_crc,
-                "sections": [base64.b64encode(raw).decode("ascii") for raw in collector.ordered()]}
+    document = {
+        "schema": 1,
+        "crc": collector.check_crc,
+        "sections": [base64.b64encode(raw).decode("ascii") for raw in collector.ordered()],
+    }
     atomic_write(Path(path), json.dumps(document, indent=2).encode("utf-8"))
 
 
@@ -53,14 +61,24 @@ def analyze(collector, database, orbital=DEFAULT_ORBITAL):
         warnings.append("No channels matched the receiver's TV services.")
     if not collector.check_crc:
         warnings.append("Captured with the CRC check disabled; review the names before applying.")
-    report = {"schema": 1, "complete": collector.complete, "version": collector.version,
-              "crc_checked": collector.check_crc,
-              "sections": len(collector.parts), "missing_sections": collector.missing,
-              "rejected_sections": collector.rejected, "duplicates": collector.duplicates,
-              "channels": [asdict(channel) for channel in result.channels],
-              "matched": [{"lcn": channel.lcn, "name": channel.name, "reference": service.reference}
-                          for channel, service in matched], "skipped": skipped, "warnings": warnings,
-              "can_apply": collector.complete and bool(matched) and not result.warnings}
+    report = {
+        "schema": 1,
+        "complete": collector.complete,
+        "version": collector.version,
+        "crc_checked": collector.check_crc,
+        "sections": len(collector.parts),
+        "missing_sections": collector.missing,
+        "rejected_sections": collector.rejected,
+        "duplicates": collector.duplicates,
+        "channels": [asdict(channel) for channel in result.channels],
+        "matched": [
+            {"lcn": channel.lcn, "name": channel.name, "reference": service.reference}
+            for channel, service in matched
+        ],
+        "skipped": skipped,
+        "warnings": warnings,
+        "can_apply": collector.complete and bool(matched) and not result.warnings,
+    }
     return report, matched
 
 
@@ -73,6 +91,8 @@ def apply_capture(capture_path, config_dir, orbital=DEFAULT_ORBITAL):
     database = ServiceDatabase.load(Path(config_dir) / "lamedb")
     report, matched = analyze(collector, database, orbital)
     if not report["can_apply"]:
-        raise ValueError("A complete and unambiguous table is required: " + " ".join(report["warnings"]))
+        raise ValueError(
+            "A complete and unambiguous table is required: " + " ".join(report["warnings"])
+        )
     report["backup"] = BouquetStore(config_dir).apply(matched)
     return report

@@ -1,7 +1,8 @@
 """Read lamedb 4/5 without modifying the receiver's service database."""
+
+import csv
 from dataclasses import dataclass
 from pathlib import Path
-import csv
 
 from .constants import DEFAULT_ORBITAL, POLARIZATIONS, TV_SERVICE_TYPES
 
@@ -100,27 +101,37 @@ class ServiceDatabase:
                     index += 2
         return cls(transponders, services)
 
-    def tuning_service(self, frequency_mhz, polarization, symbol_rate_ksym, orbital=DEFAULT_ORBITAL):
+    def tuning_service(
+        self, frequency_mhz, polarization, symbol_rate_ksym, orbital=DEFAULT_ORBITAL
+    ):
         pol = POLARIZATIONS[polarization]
-        keys = {key for key, tp in self.transponders.items()
-                if tp.orbital == orbital and tp.polarization == pol
-                and abs(tp.frequency - frequency_mhz * 1000) <= 2000
-                and abs(tp.symbol_rate - symbol_rate_ksym * 1000) <= 1000}
+        keys = {
+            key
+            for key, tp in self.transponders.items()
+            if tp.orbital == orbital
+            and tp.polarization == pol
+            and abs(tp.frequency - frequency_mhz * 1000) <= 2000
+            and abs(tp.symbol_rate - symbol_rate_ksym * 1000) <= 1000
+        }
         candidates = [service for service in self.services if service.key in keys]
         if not candidates:
-            raise ValueError("TKGS frequency is not in the service database. "
-                             "Run the receiver's network scan first.")
+            raise ValueError(
+                "TKGS frequency is not in the service database. "
+                "Run the receiver's network scan first."
+            )
         return sorted(candidates, key=lambda s: (s.key, s.sid))[0]
 
     def tuning_candidates(self, targets, orbital=DEFAULT_ORBITAL):
-        """Return (target, service) for each distinct target present in lamedb, keeping the given order."""
+        """Return (target, service) for each distinct target found in lamedb, in order."""
         candidates, seen = [], set()
         for target in targets:
             if target in seen:
                 continue
             seen.add(target)
             try:
-                service = self.tuning_service(target.frequency, target.polarization, target.symbol_rate, orbital)
+                service = self.tuning_service(
+                    target.frequency, target.polarization, target.symbol_rate, orbital
+                )
             except ValueError:
                 continue
             candidates.append((target, service))
@@ -129,12 +140,21 @@ class ServiceDatabase:
     def match(self, channels, orbital=DEFAULT_ORBITAL):
         matched, skipped = [], []
         for channel in channels:
-            candidates = {s.reference: s for s in self.by_sid.get(channel.sid, [])
-                          if s.key in self.transponders and self.transponders[s.key].orbital == orbital
-                          and s.kind in TV_SERVICE_TYPES}
+            candidates = {
+                s.reference: s
+                for s in self.by_sid.get(channel.sid, [])
+                if s.key in self.transponders
+                and self.transponders[s.key].orbital == orbital
+                and s.kind in TV_SERVICE_TYPES
+            }
             if len(candidates) != 1:
-                skipped.append({"lcn": channel.lcn, "name": channel.name,
-                                "reason": "ambiguous" if candidates else "missing"})
+                skipped.append(
+                    {
+                        "lcn": channel.lcn,
+                        "name": channel.name,
+                        "reason": "ambiguous" if candidates else "missing",
+                    }
+                )
                 continue
             matched.append((channel, next(iter(candidates.values()))))
         return matched, skipped

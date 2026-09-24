@@ -1,11 +1,12 @@
 """Atomic per-file bouquet updates, immutable backups, and rollback on errors."""
+
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 import fcntl
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 import tempfile
 import uuid
@@ -54,8 +55,7 @@ def render_bouquet(matched):
         if service.reference in seen:
             continue
         seen.add(service.reference)
-        rows.extend(["#SERVICE " + service.reference,
-                     "#DESCRIPTION " + clean_name(channel.name)])
+        rows.extend(["#SERVICE " + service.reference, "#DESCRIPTION " + clean_name(channel.name)])
     return ("\n".join(rows) + "\n").encode("utf-8")
 
 
@@ -130,7 +130,9 @@ class BouquetStore:
             # Preserve unknown bytes and all unrelated lines, remove only our link duplicates.
             lines = index.splitlines()
             token = ('FROM BOUQUET "%s"' % BOUQUET).encode("ascii")
-            lines = [line for line in lines if not (line.startswith(b"#SERVICE ") and token in line)]
+            lines = [
+                line for line in lines if not (line.startswith(b"#SERVICE ") and token in line)
+            ]
             lines.append(LINK.encode("ascii"))
             return self._transaction({BOUQUET: bouquet, INDEX: b"\n".join(lines) + b"\n"}, before)
 
@@ -150,5 +152,7 @@ class BouquetStore:
                     raise ValueError("Backup integrity check failed")
                 before[name] = self._read(name)
                 if digest(before[name]) != manifest["after"][name]:
-                    raise ValueError("Channels changed after the backup; automatic rollback stopped")
+                    raise ValueError(
+                        "Channels changed after the backup; automatic rollback stopped"
+                    )
             return self._transaction(desired, before)
