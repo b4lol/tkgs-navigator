@@ -21,7 +21,7 @@ class DiscoveryTests(unittest.TestCase):
             [
                 (11096, "H", 30000, True),
                 (12380, "V", 27500, True),
-                (12423, "H", 30000, True),
+                (12422, "H", 30000, True),
                 (11054, "V", 30000, True),
                 (11200, "V", 27500, False),
             ]
@@ -29,7 +29,7 @@ class DiscoveryTests(unittest.TestCase):
         plan = plan_discovery(db, learned=TuningTarget(11054, "V", 30000))
         self.assertEqual(
             [(c.target.frequency, c.deep) for c in plan],
-            [(11054, False), (12380, False), (12423, False), (11096, True)],
+            [(11054, False), (12380, False), (12422, False), (11096, True)],
         )
 
     def test_learned_equal_to_a_known_transponder_is_tried_once(self):

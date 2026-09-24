@@ -16,8 +16,22 @@ class TuningTarget(NamedTuple):
 
 
 # TKGS data transponders on Türksat 42°E (MHz, polarization, kSym/s), in trial order.
-# Published listings, not a broadcaster guarantee; the receiver's lamedb decides which exist.
-TKGS_TRANSPONDERS = (TuningTarget(12380, "V", 27500), TuningTarget(12423, "H", 30000))
+# kingofsat.net 42°E listing of September 2026 (12 "TKGS DATA" transponders), rounded to
+# whole MHz; the receiver's lamedb decides which exist and matching allows ±2 MHz.
+TKGS_TRANSPONDERS = (
+    TuningTarget(12380, "V", 27500),
+    TuningTarget(12422, "H", 30000),
+    TuningTarget(11225, "V", 30000),
+    TuningTarget(11425, "V", 30000),
+    TuningTarget(11996, "V", 27500),
+    TuningTarget(12111, "V", 27500),
+    TuningTarget(12150, "V", 27500),
+    TuningTarget(12345, "V", 30000),
+    TuningTarget(12423, "V", 27500),
+    TuningTarget(12458, "V", 30000),
+    TuningTarget(12685, "H", 27500),
+    TuningTarget(12685, "V", 30000),
+)
 
 POLARIZATIONS = {"H": 0, "V": 1, "L": 2, "R": 3}
 TV_SERVICE_TYPES = (1, 4, 17, 22, 25, 31, 32)

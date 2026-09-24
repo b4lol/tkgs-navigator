@@ -192,7 +192,7 @@ class DatabaseTests(unittest.TestCase):
         found = database.tuning_candidates(targets)
         self.assertEqual(
             [(target.frequency, service.sid) for target, service in found],
-            [(12423, 0x67), (12380, 0x65)],
+            [(12422, 0x67), (12380, 0x65)],
         )
         self.assertEqual(
             ServiceDatabase.parse(LAMEDB4).tuning_candidates([TuningTarget(11000, "V", 27500)]), []

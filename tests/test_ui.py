@@ -395,7 +395,20 @@ class ScreenTests(EnigmaTestCase):
         self.assertTrue(all(isinstance(t, SatelliteParameters) for t in scan["transponders"]))
         self.assertEqual(
             [(t.frequency, t.polarisation) for t in scan["transponders"]],
-            [(12380000, 1), (12423000, 0)],
+            [
+                (12380000, 1),
+                (12422000, 0),
+                (11225000, 1),
+                (11425000, 1),
+                (11996000, 1),
+                (12111000, 1),
+                (12150000, 1),
+                (12345000, 1),
+                (12423000, 1),
+                (12458000, 1),
+                (12685000, 0),
+                (12685000, 1),
+            ],
         )
         self.lamedb(LAMEDB4)
         callback()
@@ -476,7 +489,7 @@ class ScreenTests(EnigmaTestCase):
         self.controller.check_lock()
         self.assertEqual(self.controller.state, "tuning")
         self.assertNotEqual(self.controller.target_reference, first)
-        self.assertIn("12423 H 30000", self.screen["status"].text)
+        self.assertIn("12422 H 30000", self.screen["status"].text)
         self.controller.deadline = 0
         self.controller.check_lock()
         self.assertEqual(self.controller.state, "idle")
