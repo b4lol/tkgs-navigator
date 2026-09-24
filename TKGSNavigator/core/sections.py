@@ -11,7 +11,10 @@ from .crc import crc32_mpeg
 class SectionFramer:
     """Accept split/coalesced demux reads; retain at most one partial section."""
 
-    def __init__(self) -> None:
+    def __init__(self, table_id: int | None = TKGS_TABLE_ID) -> None:
+        # None accepts any table id (research recordings); long-form checks then apply only
+        # to sections that set section_syntax_indicator.
+        self.table_id = table_id
         self.pending = bytearray()
 
     def feed(self, chunk: bytes) -> list[bytes]:
@@ -21,11 +24,12 @@ class SectionFramer:
         offset = 0
         while len(self.pending) - offset >= 3:
             size = 3 + ((self.pending[offset + 1] & 15) << 8 | self.pending[offset + 2])
-            if (
-                self.pending[offset] != TKGS_TABLE_ID
-                or not self.pending[offset + 1] & 0x80
-                or size < 12
-            ):
+            long_form = bool(self.pending[offset + 1] & 0x80)
+            if self.table_id is None:
+                valid = size >= 12 if long_form else size >= 4
+            else:
+                valid = self.pending[offset] == self.table_id and long_form and size >= 12
+            if not valid:
                 offset += 1
                 continue
             if len(self.pending) - offset < size:

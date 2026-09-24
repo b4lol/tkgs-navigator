@@ -12,17 +12,15 @@ from typing import Any, List, Optional, Sequence
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from TKGSNavigator.core import dvb
+    from TKGSNavigator.core import dvb, inspect, workflow
     from TKGSNavigator.core.constants import DEFAULT_ORBITAL
     from TKGSNavigator.core.lamedb import ServiceDatabase
     from TKGSNavigator.core.storage import BouquetStore
-    from TKGSNavigator.core.workflow import apply_capture, load_capture, preview, save_capture
 else:
-    from .core import dvb
+    from .core import dvb, inspect, workflow
     from .core.constants import DEFAULT_ORBITAL
     from .core.lamedb import ServiceDatabase
     from .core.storage import BouquetStore
-    from .core.workflow import apply_capture, load_capture, preview, save_capture
 
 
 def emit(event: str, **values: Any) -> None:
@@ -45,22 +43,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop early if no TKGS data arrives within this many seconds",
     )
     scan.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
+    scan.add_argument("--extension", type=int, help="Subtable to use from a raw recording")
     apply = commands.add_parser(
         "apply", help="Validate a full capture, back up, and write the bouquet"
     )
     apply.add_argument("--capture", required=True)
     apply.add_argument("--config-dir", required=True)
     apply.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
+    apply.add_argument("--extension", type=int, help="Subtable to use from a raw recording")
     restore = commands.add_parser("restore", help="Restore the given backup")
     restore.add_argument("--config-dir", required=True)
     restore.add_argument("--backup", required=True)
+    record = commands.add_parser(
+        "record", help="Record every TKGS section, unfiltered, for offline layout research"
+    )
+    record.add_argument("--device", required=True, help="Demux already tuned to the TKGS frequency")
+    record.add_argument("--output", required=True)
+    record.add_argument("--seconds", type=int, default=90)
+    record.add_argument(
+        "--all-tables", action="store_true", help="Keep every table id on the TKGS PID"
+    )
+    examine = commands.add_parser("inspect", help="Describe a capture or recording per layout")
+    examine.add_argument("--capture", required=True)
+    examine.add_argument("--lamedb", help="Also measure how record keys agree with lamedb")
+    examine.add_argument("--orbital", type=int, default=DEFAULT_ORBITAL)
     return parser
+
+
+def run_record(args: argparse.Namespace, interrupted: List[bool]) -> int:
+    sections = dvb.record(
+        args.device,
+        args.seconds,
+        args.all_tables,
+        lambda: interrupted[0],
+        lambda data: emit("progress", **data),
+    )
+    if interrupted[0]:
+        raise dvb.Cancelled("Recording cancelled")
+    workflow.save_recording(args.output, sections, args.seconds, args.all_tables)
+    emit("recorded", path=args.output, sections=len(sections), bytes=sum(map(len, sections)))
+    return 0
+
+
+def run_inspect(args: argparse.Namespace) -> int:
+    _, sections = workflow.read_document(args.capture)
+    database = ServiceDatabase.load(args.lamedb) if args.lamedb else None
+    emit("inspection", **inspect.inspect_sections(sections, database, args.orbital))
+    return 0
 
 
 def run_scan(args: argparse.Namespace, interrupted: List[bool]) -> int:
     database = ServiceDatabase.load(args.lamedb)
     collector = (
-        load_capture(args.capture)
+        workflow.load_capture(args.capture, args.extension)
         if args.capture
         else dvb.capture(
             args.device,
@@ -73,8 +108,8 @@ def run_scan(args: argparse.Namespace, interrupted: List[bool]) -> int:
     if interrupted[0]:
         raise dvb.Cancelled("Scan cancelled")
     if args.save_capture:
-        save_capture(args.save_capture, collector)
-    report = preview(collector, database, args.orbital)
+        workflow.save_capture(args.save_capture, collector)
+    report = workflow.preview(collector, database, args.orbital)
     emit("result", **report)
     return 0 if report["can_apply"] else 2  # 2: previewed, but not applicable.
 
@@ -87,14 +122,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     def cancel(signum: int, frame: Optional[FrameType]) -> None:
         interrupted[0] = True
 
-    if args.command == "scan":
+    if args.command in ("scan", "record"):
         signal.signal(signal.SIGTERM, cancel)
         signal.signal(signal.SIGINT, cancel)
     try:
         if args.command == "scan":
             return run_scan(args, interrupted)
+        if args.command == "record":
+            return run_record(args, interrupted)
+        if args.command == "inspect":
+            return run_inspect(args)
         if args.command == "apply":
-            emit("applied", **apply_capture(args.capture, args.config_dir, args.orbital))
+            report = workflow.apply_capture(
+                args.capture, args.config_dir, args.orbital, args.extension
+            )
+            emit("applied", **report)
         else:
             emit("restored", backup=BouquetStore(args.config_dir).restore(args.backup))
         return 0

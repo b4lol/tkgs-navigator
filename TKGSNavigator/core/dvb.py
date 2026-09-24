@@ -30,9 +30,16 @@ FILTER_PARAMETERS = struct.Struct("=H16s16s16s2xII")
 Progress = Dict[str, Optional[Union[int, float, bool]]]
 
 
-def filter_parameters(check_crc: bool = True) -> bytes:
+MAX_RECORD_SECONDS = 600
+MAX_RECORD_SECTIONS = 4096
+MAX_RECORD_BYTES = 8 * 1024 * 1024
+
+
+def filter_parameters(check_crc: bool = True, table_id: int | None = TKGS_TABLE_ID) -> bytes:
+    """Section filter on the TKGS PID; table_id None passes every table on that PID."""
     flags = (DMX_CHECK_CRC if check_crc else 0) | DMX_IMMEDIATE_START
-    return FILTER_PARAMETERS.pack(TKGS_PID, bytes([TKGS_TABLE_ID]), b"\xff", b"", 0, flags)
+    value, mask = (b"", b"") if table_id is None else (bytes([table_id]), b"\xff")
+    return FILTER_PARAMETERS.pack(TKGS_PID, value, mask, b"", 0, flags)
 
 
 def ioctl_request(
@@ -50,8 +57,51 @@ class Cancelled(Exception):
     pass
 
 
-def _start_filter(fd: int, check_crc: bool = True) -> None:
-    fcntl.ioctl(fd, ioctl_request(43, FILTER_PARAMETERS.size, True), filter_parameters(check_crc))
+def _start_filter(fd: int, check_crc: bool = True, table_id: int | None = TKGS_TABLE_ID) -> None:
+    request = ioctl_request(43, FILTER_PARAMETERS.size, True)
+    fcntl.ioctl(fd, request, filter_parameters(check_crc, table_id))
+
+
+def _open(device: str) -> int:
+    return os.open(device, os.O_RDWR | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+
+
+def _close(fd: int) -> None:
+    try:
+        fcntl.ioctl(fd, ioctl_request(42))
+    except OSError:
+        pass
+    os.close(fd)
+
+
+def _drain(
+    fd: int,
+    framer: SectionFramer,
+    cancelled: Callable[[], bool],
+    consume: Callable[[bytes], bool],
+) -> tuple[bool, bool]:
+    """Read what the demux has, feeding each section to consume until it returns True.
+
+    Returns (received, overflowed). After an overflow the caller must reset the framer.
+    """
+    received = False
+    for _ in range(READS_PER_WAKE):
+        if cancelled():
+            raise Cancelled("Scan cancelled")
+        try:
+            chunk = os.read(fd, READ_SIZE)
+        except OSError as error:
+            if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                break
+            if error.errno == errno.EOVERFLOW:
+                return received, True
+            raise
+        if not chunk:
+            raise OSError("DVB device closed the data stream")
+        received = True
+        if any([consume(raw) for raw in framer.feed(chunk)]):
+            break
+    return received, False
 
 
 def _snapshot(collector: TableCollector, elapsed: float, timeout: int) -> Progress:
@@ -87,8 +137,12 @@ def capture(
     if idle_timeout is not None and not 1 <= idle_timeout <= timeout:
         raise ValueError("Idle timeout must be between 1 second and the scan timeout")
     collector, framer = TableCollector(), SectionFramer()
-    fd = os.open(device, os.O_RDWR | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
-    stop = ioctl_request(42)
+
+    def consume(raw: bytes) -> bool:
+        collector.add(raw)
+        return collector.complete
+
+    fd = _open(device)
     try:
         _start_filter(fd)
         started = time.monotonic()
@@ -103,26 +157,11 @@ def capture(
                 break
             ready, _, _ = select.select([fd], [], [], min(SELECT_INTERVAL, remaining))
             if ready:
-                for _ in range(READS_PER_WAKE):
-                    if cancelled():
-                        raise Cancelled("Scan cancelled")
-                    try:
-                        chunk = os.read(fd, READ_SIZE)
-                    except OSError as error:
-                        if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
-                            break
-                        if error.errno == errno.EOVERFLOW:
-                            framer = SectionFramer()
-                            collector.rejected += 1
-                            break
-                        raise
-                    if not chunk:
-                        raise OSError("DVB device closed the data stream")
-                    received = True
-                    for raw in framer.feed(chunk):
-                        collector.add(raw)
-                    if collector.complete:
-                        break
+                got, overflowed = _drain(fd, framer, cancelled, consume)
+                received = received or got
+                if overflowed:
+                    framer = SectionFramer()
+                    collector.rejected += 1
             now = time.monotonic()
             if idle_timeout is not None and not received and now - started >= idle_timeout:
                 progress(_snapshot(collector, now - started, timeout))
@@ -133,7 +172,7 @@ def capture(
                 and now - started >= CRC_FALLBACK_AFTER
             ):
                 try:
-                    fcntl.ioctl(fd, stop)
+                    fcntl.ioctl(fd, ioctl_request(42))
                 except OSError:
                     pass
                 _start_filter(fd, check_crc=False)
@@ -143,8 +182,67 @@ def capture(
                 next_update = now + PROGRESS_INTERVAL
         return collector
     finally:
-        try:
-            fcntl.ioctl(fd, stop)
-        except OSError:
-            pass
-        os.close(fd)
+        _close(fd)
+
+
+def record(
+    device: str,
+    seconds: int = 90,
+    all_tables: bool = False,
+    cancelled: Callable[[], bool] = lambda: False,
+    progress: Callable[[Progress], None] = lambda data: None,
+) -> list[bytes]:
+    """Record every distinct section on the TKGS PID for research, without CRC filtering.
+
+    Unlike capture(), this keeps all subtables and versions (and, with all_tables, every
+    table id) so an unknown layout can be studied offline. Bounded in time and size.
+
+    Raises:
+        ValueError: on an out-of-range duration.
+        Cancelled: when cancelled() turns true.
+        OSError: when the demux cannot be opened, filtered or read.
+    """
+    if not 1 <= seconds <= MAX_RECORD_SECONDS:
+        raise ValueError("Recording length must be between 1 and %d seconds" % MAX_RECORD_SECONDS)
+    table_id = None if all_tables else TKGS_TABLE_ID
+    framer = SectionFramer(table_id)
+    seen: set[bytes] = set()
+    sections: list[bytes] = []
+    size = [0]
+
+    def consume(raw: bytes) -> bool:
+        if raw not in seen:
+            seen.add(raw)
+            sections.append(raw)
+            size[0] += len(raw)
+        return len(sections) >= MAX_RECORD_SECTIONS or size[0] >= MAX_RECORD_BYTES
+
+    fd = _open(device)
+    try:
+        _start_filter(fd, check_crc=False, table_id=table_id)
+        started = time.monotonic()
+        next_update = started
+        while len(sections) < MAX_RECORD_SECTIONS and size[0] < MAX_RECORD_BYTES:
+            if cancelled():
+                raise Cancelled("Recording cancelled")
+            now = time.monotonic()
+            remaining = seconds - (now - started)
+            if remaining <= 0:
+                break
+            ready, _, _ = select.select([fd], [], [], min(SELECT_INTERVAL, remaining))
+            if ready and _drain(fd, framer, cancelled, consume)[1]:
+                framer = SectionFramer(table_id)
+            now = time.monotonic()
+            if now >= next_update:
+                progress(
+                    {
+                        "elapsed": round(now - started, 1),
+                        "seconds": seconds,
+                        "sections": len(sections),
+                        "bytes": size[0],
+                    }
+                )
+                next_update = now + PROGRESS_INTERVAL
+        return sections
+    finally:
+        _close(fd)
